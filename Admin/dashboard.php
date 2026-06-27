@@ -1,366 +1,441 @@
- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>HR Dashboard</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-high": "#e7e8e9",
+                    "on-primary-container": "#96a9be",
+                    "surface-bright": "#f8f9fa",
+                    "on-tertiary-fixed-variant": "#6c228c",
+                    "tertiary-container": "#611381",
+                    "error-container": "#ffdad6",
+                    "surface-dim": "#d9dadb",
+                    "secondary": "#006b58",
+                    "primary-fixed-dim": "#b5c8df",
+                    "on-background": "#191c1d",
+                    "inverse-surface": "#2e3132",
+                    "secondary-fixed-dim": "#65dabc",
+                    "secondary-container": "#82f7d8",
+                    "on-primary-fixed": "#091d2e",
+                    "error": "#ba1a1a",
+                    "surface-tint": "#4e6073",
+                    "on-secondary-fixed-variant": "#005142",
+                    "on-tertiary-container": "#d788f6",
+                    "on-primary": "#ffffff",
+                    "primary": "#162839",
+                    "tertiary-fixed-dim": "#ecb2ff",
+                    "on-tertiary": "#ffffff",
+                    "primary-container": "#2c3e50",
+                    "inverse-primary": "#b5c8df",
+                    "on-secondary-container": "#00725e",
+                    "secondary-fixed": "#82f7d8",
+                    "outline": "#74777d",
+                    "on-error-container": "#93000a",
+                    "on-surface": "#191c1d",
+                    "outline-variant": "#c4c6cd",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed": "#f8d8ff",
+                    "on-tertiary-fixed": "#320047",
+                    "surface-container": "#edeeef",
+                    "surface": "#f8f9fa",
+                    "surface-variant": "#e1e3e4",
+                    "on-secondary-fixed": "#002019",
+                    "primary-fixed": "#d1e4fb",
+                    "surface-container-highest": "#e1e3e4",
+                    "surface-container-low": "#f3f4f5",
+                    "on-error": "#ffffff",
+                    "background": "#f8f9fa",
+                    "inverse-on-surface": "#f0f1f2",
+                    "on-primary-fixed-variant": "#36485b",
+                    "on-secondary": "#ffffff",
+                    "tertiary": "#43005e",
+                    "on-surface-variant": "#43474c"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "xs": "8px",
+                    "lg": "24px",
+                    "xl": "32px",
+                    "md": "16px",
+                    "base": "4px",
+                    "gutter": "20px",
+                    "sm": "12px",
+                    "sidebar-width": "260px"
+            },
+            "fontFamily": {
+                    "headline-md": ["Hanken Grotesk"],
+                    "body-md": ["Inter"],
+                    "headline-sm": ["Hanken Grotesk"],
+                    "display-lg": ["Hanken Grotesk"],
+                    "label-caps": ["Inter"],
+                    "data-mono": ["JetBrains Mono"],
+                    "body-sm": ["Inter"],
+                    "body-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "data-mono": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+        .chart-bar { transition: height 1s ease-in-out; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+    </style>
 </head>
-<body class="bg-[#f8fafc] text-slate-700 min-h-screen flex font-sans">
-
-    <aside class="w-64 bg-[#1e293b] text-slate-300 flex flex-col fixed h-full z-10">
-        <div class="p-6 border-b border-slate-700">
-            <h1 class="text-xl font-bold text-white tracking-wide">Admin</h1>
-        </div>
-        
-        <nav class="flex-1 p-4 space-y-1">
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg bg-indigo-600 text-white font-medium transition">
-                <i class="fa-solid fa-chart-pie text-lg"></i>
-                <span>Dashboard</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition">
-                <i class="fa-solid fa-users text-lg"></i>
-                <span>Employees</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition">
-                <i class="fa-solid fa-sitemap text-lg"></i>
-                <span>Departments</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition">
-                <i class="fa-solid fa-calendar-check text-lg"></i>
-                <span>Attendance</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition">
-                <i class="fa-solid fa-envelope-open-text text-lg"></i>
-                <span>Leave Requests</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition mt-auto">
-                <i class="fa-solid fa-gear text-lg"></i>
-                <span>Settings</span>
-            </a>
-        </nav>
-
-        <div class="p-4 border-t border-slate-700 flex items-center gap-3">
-            <div class="w-10 h-10 rounded-full bg-slate-500 overflow-hidden flex items-center justify-center text-white font-bold">
-                A
-            </div>
-            <div>
-                <p class="text-sm font-semibold text-white">Admin</p>
-                <p class="text-xs text-slate-400">Administrator</p>
-            </div>
-            <button class="ml-auto text-slate-400 hover:text-red-400 transition">
-                <i class="fa-solid fa-right-from-bracket"></i>
+<body class="text-on-surface bg-background">
+<!-- Predicted SideNavBar Component -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide">
+<div class="px-md mb-xl">
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Admin</h1>
+<p class="font-body-md text-body-md text-on-primary opacity-80">HR Management System</p>
+</div>
+<nav class="flex-grow space-y-1">
+<!-- Dashboard is Active -->
+<a class="flex items-center gap-md px-md py-sm border-l-4 border-secondary bg-primary-container text-on-primary cursor-pointer active:scale-95 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-caps text-label-caps">Dashboard</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="employee_management.php">
+<span class="material-symbols-outlined" data-icon="groups">groups</span>
+<span class="font-label-caps text-label-caps">Employees</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="department_management.php">
+<span class="material-symbols-outlined" data-icon="domain">domain</span>
+<span class="font-label-caps text-label-caps">Departments</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="attendenceman.php">
+<span class="material-symbols-outlined" data-icon="fact_check">fact_check</span>
+<span class="font-label-caps text-label-caps">Attendance</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="leaverequest.php">
+<span class="material-symbols-outlined" data-icon="event_busy">event_busy</span>
+<span class="font-label-caps text-label-caps">Leave Requests</span>
+</a>
+</nav>
+<div class="mt-auto border-t border-on-primary-fixed-variant/20 pt-lg space-y-1">
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="admin_setting.php">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-caps text-label-caps">Settings</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="dashboard.php">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-label-caps text-label-caps">Logout</span>
+</a>
+<div class="px-md mt-md flex items-center gap-sm">
+<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" data-alt="A professional high-resolution corporate headshot of a middle-aged HR executive with a kind smile, wearing a dark navy blazer over a crisp white shirt. The background is a soft-focus modern office interior with warm wooden accents and bright morning sunlight streaming through glass partitions. The lighting is flattering and high-key, conveying a sense of leadership and institutional trust." src="https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg"/>
+<div class="flex flex-col">
+<span class="text-on-primary font-semibold text-body-sm">Admin</span>
+<span class="text-on-primary text-[10px]">Super Administrator</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- Predicted TopNavBar Component -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+<div class="flex items-center gap-lg flex-1">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-full py-xs pl-xl pr-md text-body-md focus:ring-2 focus:ring-secondary/50" placeholder="Search employees, files, or reports..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<button class="material-symbols-outlined p-xs rounded-full hover:bg-surface-container-low text-on-surface-variant relative transition-all">
+                notifications
+                <span class="absolute top-0 right-0 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<div class="h-8 w-[1px] bg-outline-variant mx-xs"></div>
+<button class="bg-secondary text-white px-md py-xs rounded-lg font-body-md flex items-center gap-xs hover:bg-secondary/90 active:scale-95 transition-all">
+<span class="material-symbols-outlined !text-[18px]">person_add</span>
+                Add Employee
             </button>
-        </div>
-    </aside>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-[260px] pt-16 min-h-screen p-lg max-w-[1600px]">
+<div class="flex flex-col gap-lg">
+<!-- Welcome Header -->
+<section class="flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
+<div>
+<h2 class="font-headline-md text-headline-md text-primary">Dashboard Overview</h2>
+<p class="font-body-md text-on-surface-variant">Summary of human resources performance and daily activity.</p>
+</div>
+<div class="flex items-center gap-sm bg-surface-container p-base rounded-lg border border-outline-variant">
+<button class="px-md py-xs rounded text-label-caps bg-surface-container-lowest shadow-sm">TODAY</button>
+<button class="px-md py-xs rounded text-label-caps hover:bg-surface-container-high transition-colors">WEEK</button>
+<button class="px-md py-xs rounded text-label-caps hover:bg-surface-container-high transition-colors">MONTH</button>
+</div>
+</section>
+<!-- KPI Cards Bento Grid -->
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-md">
+<!-- KPI Card: Total Employees -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-sm border-t-4 border-primary transition-transform hover:scale-[1.02]">
+<div class="flex justify-between items-start mb-sm">
+<span class="material-symbols-outlined text-primary bg-primary-fixed p-xs rounded-lg">groups</span>
+</div>
+<p class="font-label-caps text-label-caps text-on-surface-variant">TOTAL EMPLOYEES</p>
+<h3 class="font-display-lg text-display-lg text-primary mt-xs">1,248</h3>
+<p class="text-[10px] text-on-surface-variant mt-xs italic">12 New hires this month</p>
+</div>
+<!-- KPI Card: Attendance % -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-sm border-t-4 border-secondary transition-transform hover:scale-[1.02]">
+<div class="flex justify-between items-start mb-sm">
+<span class="material-symbols-outlined text-secondary bg-secondary-container p-xs rounded-lg">calendar_today</span></div>
+<p class="font-label-caps text-label-caps text-on-surface-variant">ATTENDANCE RATE</p>
+<h3 class="font-display-lg text-display-lg text-primary mt-xs">94.2%</h3>
+<p class="text-[10px] text-on-surface-variant mt-xs italic">System average: 95.0%</p>
+</div>
+<!-- KPI Card: Late Arrivals -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-sm border-t-4 border-error transition-transform hover:scale-[1.02]">
+<div class="flex justify-between items-start mb-sm">
+<span class="material-symbols-outlined text-error bg-error-container p-xs rounded-lg">schedule</span>
+</div>
+<p class="font-label-caps text-label-caps text-on-surface-variant">LATE ARRIVALS TODAY</p>
+<h3 class="font-display-lg text-display-lg text-primary mt-xs">14</h3>
+</div>
+<!-- KPI Card: Pending Leave -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-sm border-t-4 border-tertiary-container transition-transform hover:scale-[1.02]">
+<div class="flex justify-between items-start mb-sm">
+<span class="material-symbols-outlined text-tertiary-container bg-tertiary-fixed p-xs rounded-lg">pending_actions</span>
+<div class="bg-tertiary-fixed text-on-tertiary-fixed px-xs rounded text-[10px] font-bold">URGENT</div>
+</div>
+<p class="font-label-caps text-label-caps text-on-surface-variant">PENDING LEAVE REQUESTS</p>
+<h3 class="font-display-lg text-display-lg text-primary mt-xs">28</h3>
+<p class="text-[10px] text-on-surface-variant mt-xs italic">8 awaiting your approval</p>
+</div>
+</section>
+<!-- Charts & Notification Section -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-lg">
+<!-- Performance Chart Container -->
+<div class="lg:col-span-2 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-sm flex flex-col">
+<div class="flex justify-between items-center mb-xl">
+<div>
+<h4 class="font-headline-sm text-headline-sm text-primary">Monthly Performance Report</h4>
+<p class="font-body-sm text-on-surface-variant">Attendance vs. Late arrivals trends</p>
+</div>
+<select class="bg-surface-container border-none rounded-lg text-body-sm px-md py-xs focus:ring-secondary/50">
+<option>Last 30 Days</option>
+<option>Last Quarter</option>
+</select>
+</div>
+<!-- Custom Visual Chart Implementation -->
+<div class="flex-grow flex items-end justify-between h-64 gap-md pb-xs border-b border-outline-variant relative">
+<!-- Chart Lines (Simulated Grid) -->
+<div class="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-10">
+<div class="border-b border-on-surface w-full"></div>
+<div class="border-b border-on-surface w-full"></div>
+<div class="border-b border-on-surface w-full"></div>
+<div class="border-b border-on-surface w-full"></div>
+</div>
+<!-- Bar Groups -->
+<div class="flex flex-col items-center flex-1 group">
+<div class="flex items-end gap-[2px] w-full justify-center h-full">
+<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: 85%;"></div>
+<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: 15%;"></div>
+</div>
+<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant">WK 01</span>
+</div>
+<div class="flex flex-col items-center flex-1 group">
+<div class="flex items-end gap-[2px] w-full justify-center h-full">
+<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: 92%;"></div>
+<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: 8%;"></div>
+</div>
+<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant">WK 02</span>
+</div>
+<div class="flex flex-col items-center flex-1 group">
+<div class="flex items-end gap-[2px] w-full justify-center h-full">
+<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: 78%;"></div>
+<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: 22%;"></div>
+</div>
+<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant">WK 03</span>
+</div>
+<div class="flex flex-col items-center flex-1 group">
+<div class="flex items-end gap-[2px] w-full justify-center h-full">
+<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: 95%;"></div>
+<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: 5%;"></div>
+</div>
+<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant">WK 04</span>
+</div>
+<div class="flex flex-col items-center flex-1 group">
+<div class="flex items-end gap-[2px] w-full justify-center h-full">
+<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: 88%;"></div>
+<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: 12%;"></div>
+</div>
+<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant">TODAY</span>
+</div>
+</div>
+<div class="flex items-center gap-lg mt-lg">
+<div class="flex items-center gap-xs">
+<span class="w-3 h-3 bg-primary rounded-full"></span>
+<span class="text-body-sm text-on-surface-variant">Attendance (%)</span>
+</div>
+<div class="flex items-center gap-xs">
+<span class="w-3 h-3 bg-error opacity-60 rounded-full"></span>
+<span class="text-body-sm text-on-surface-variant">Late Arrivals</span>
+</div>
+</div>
+</div>
+<!-- Notifications Panel -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-sm">
+<div class="flex justify-between items-center mb-lg">
+<h4 class="font-headline-sm text-headline-sm text-primary">Recent Notifications</h4>
+<span class="bg-error text-white text-[10px] font-bold px-sm py-base rounded-full">1 NEW</span>
+</div>
+<div class="space-y-sm">
+<!-- Notification Item -->
+<div class="flex gap-md p-sm bg-surface-container-low rounded-lg border border-outline-variant/30 hover:border-secondary transition-colors cursor-pointer">
+<div class="w-10 h-10 rounded-full bg-secondary-container text-secondary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined">assignment_late</span>
+</div>
+<div>
+<p class="text-body-sm font-semibold text-primary">New Leave Request:Kay Ko</p>
+<p class="text-[11px] text-on-surface-variant mb-base">Annual Leave Request for Oct 12-15</p>
+<span class="text-[10px] text-outline font-data-mono uppercase">2 MINUTES AGO</span>
+</div>
+</div>
+</div>
+<button class="w-full mt-lg text-label-caps text-secondary font-bold hover:underline py-sm border border-secondary/20 rounded-lg">VIEW ALL NOTIFICATIONS</button>
 
-    <main class="flex-1 pl-64 min-w-0">
-        
-        <header class="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-8 sticky top-0 z-20">
-            <div class="relative w-96">
-                <i class="fa-solid fa-magnifying-glass absolute left-3 top-3.5 text-slate-400 text-sm"></i>
-                <input type="text" placeholder="Search employees, files, or reports..." 
-                       class="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            </div>
+</div>
+</div>
+</div>
+<!-- Holidays & Secondary Dashboard Section -->
+<section class="grid grid-cols-1 xl:grid-cols-4 gap-lg pt-6">
+<!-- Holidays Summary -->
+<div class="xl:col-span-1 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-sm">
+<h4 class="font-headline-sm text-headline-sm text-primary mb-lg">Upcoming Holidays</h4>
+<p class="text-body-sm text-on-surface-variant mb-md">Month: October 2023</p>
+<div class="space-y-sm">
+<div class="flex items-center gap-md p-xs border-b border-outline-variant/30">
+<div class="bg-primary/10 text-primary w-12 h-12 flex flex-col items-center justify-center rounded-lg">
+<span class="text-xs font-bold">OCT</span>
+<span class="text-lg font-bold">-</span>
+</div>
+<div>
+<p class="text-body-sm font-semibold text-primary">National Day</p>
+<p class="text-[10px] text-on-surface-variant">Public Holiday</p>
+</div>
+</div>
+<button class="w-full mt-lg text-label-caps text-secondary font-bold hover:underline py-sm border border-secondary/20 rounded-lg">VIEW ALL</button>
 
-            <div class="flex items-center gap-4">
-                <button class="relative w-10 h-10 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-xl transition">
-                    <i class="fa-solid fa-bell text-lg"></i>
-                    <span class="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full"></span>
-                </button>
-             <button class="w-10 h-10 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-xl transition">
-                    <i class="fa-solid fa-sliders text-lg"></i>
-                </button>
-                <button class="bg-[#1e293b] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-slate-800 transition flex items-center gap-2 shadow-sm">
-                    <i class="fa-solid fa-user-plus text-xs"></i>
-                    <span>Add Employee</span>
-                </button>
-            </div>
-        </header>
+</div>
 
-        <div class="p-8 space-y-6 max-w-[1600px] mx-auto">
-            
-            <div class="flex justify-between items-start">
-                <div>
-                    <h2 class="text-2xl font-bold text-slate-900">Dashboard Overview</h2>
-                    <p class="text-sm text-slate-500 mt-1">Summary of human resources performance and daily activity.</p>
-                </div>
-                <div class="bg-white border border-slate-200 p-1 rounded-xl flex gap-1 shadow-sm text-xs font-semibold">
-                    <button class="px-4 py-1.5 rounded-lg bg-slate-100 text-slate-900">TODAY</button>
-                    <button class="px-4 py-1.5 rounded-lg text-slate-500 hover:bg-slate-50">WEEK</button>
-                    <button class="px-4 py-1.5 rounded-lg text-slate-500 hover:bg-slate-50">MONTH</button>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                
-                <div class="bg-white p-5 border border-slate-200 rounded-2xl shadow-sm flex flex-col justify-between">
-                    <div class="flex justify-between items-start">
-                        <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg">
-                            <i class="fa-solid fa-users"></i>
-                        </div>
-                        <span class="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg flex items-center gap-1">
-                            +4% <i class="fa-solid fa-arrow-trend-up"></i>
-                        </span>
-                    </div>
-                    <div class="mt-4">
-                        <p class="text-xs font-bold text-slate-400 tracking-wider uppercase">Total Employees</p>
-                        <h3 class="text-3xl font-extrabold text-slate-900 mt-1">1,248</h3>
-                        <p class="text-xs text-slate-400 mt-1.5"><span class="font-medium text-slate-500">12 New hires</span> this month</p>
-                    </div>
-                </div>
-
-                <div class="bg-white p-5 border border-slate-200 rounded-2xl shadow-sm flex flex-col justify-between">
-                    <div class="flex justify-between items-start">
-                        <div class="w-10 h-10 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center text-lg">
-                            <i class="fa-solid fa-calendar-check"></i>
-                        </div>
-                        <span class="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-lg flex items-center gap-1">
-                            -1.2% <i class="fa-solid fa-arrow-trend-down"></i>
-                        </span>
-                    </div>
-                    <div class="mt-4">
-                        <p class="text-xs font-bold text-slate-400 tracking-wider uppercase">Attendance Rate</p>
-                        <h3 class="text-3xl font-extrabold text-slate-900 mt-1">94.2%</h3>
-                        <p class="text-xs text-slate-400 mt-1.5">System average: <span class="font-medium text-slate-500">95.0%</span></p>
-                    </div>
-                </div>
-
-                <div class="bg-white p-5 border border-slate-200 rounded-2xl shadow-sm flex flex-col justify-between">
-                 <div class="flex justify-between items-start">
-                        <div class="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-lg">
-                            <i class="fa-solid fa-clock"></i>
-                        </div>
-                        <span class="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-lg flex items-center gap-1">
-                            -8% <i class="fa-solid fa-arrow-trend-down"></i>
-                        </span>
-                    </div>
-                    <div class="mt-4">
-                        <p class="text-xs font-bold text-slate-400 tracking-wider uppercase">Late Arrivals Today</p>
-                        <h3 class="text-3xl font-extrabold text-slate-900 mt-1">14</h3>
-                        <p class="text-xs text-slate-400 mt-1.5"><span class="font-medium text-slate-500">3 more</span> than yesterday</p>
-                    </div>
-                </div>
-
-                <div class="bg-white p-5 border border-slate-200 rounded-2xl shadow-sm flex flex-col justify-between">
-                    <div class="flex justify-between items-start">
-                        <div class="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-lg">
-                            <i class="fa-solid fa-envelope-open-text"></i>
-                        </div>
-                        <span class="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded uppercase tracking-wider">
-                            Urgent
-                        </span>
-                    </div>
-                    <div class="mt-4">
-                        <p class="text-xs font-bold text-slate-400 tracking-wider uppercase">Pending Leave Requests</p>
-                        <h3 class="text-3xl font-extrabold text-slate-900 mt-1">28</h3>
-                        <p class="text-xs text-slate-400 mt-1.5"><span class="font-medium text-purple-600">8 awaiting</span> your approval</p>
-                    </div>
-                </div>
-
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                <div class="bg-white p-6 border border-slate-200 rounded-2xl shadow-sm lg:col-span-2 flex flex-col justify-between min-h-[300px]">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <h4 class="text-base font-bold text-slate-900">Monthly Performance Report</h4>
-                            <p class="text-xs text-slate-500 mt-0.5">Attendance vs. Late arrivals trends</p>
-                        </div>
-                        <button class="text-xs font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 flex items-center gap-1.5 hover:bg-slate-100 transition">
-                            <span>Last 30 Days</span>
-                            <i class="fa-solid fa-chevron-down text-[10px]"></i>
-                        </button>
-                    </div>
-
-                    <div class="flex-1 flex flex-col justify-between mt-6 border-b border-slate-100 pb-2 relative">
-                        <div class="w-full border-t border-dashed border-slate-100 h-0"></div>
-                        <div class="w-full border-t border-dashed border-slate-100 h-0"></div>
-                        <div class="w-full border-t border-dashed border-slate-100 h-0"></div>
-                        
-                        <div class="flex justify-between text-[11px] text-slate-400 font-medium px-4 mt-auto pt-4">
-                            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-800"></span> WK 01</span>
-                            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-400"></span> WK 02</span>
-                     <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-400"></span> WK 03</span>
-                            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-400"></span> WK 04</span>
-                            <span class="text-indigo-600 font-bold flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-600"></span> TODAY</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white p-6 border border-slate-200 rounded-2xl shadow-sm flex flex-col">
-                    <div class="flex justify-between items-center mb-5">
-                        <h4 class="text-base font-bold text-slate-900">Recent Notifications</h4>
-                        <span class="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full uppercase">4 New</span>
-                    </div>
-
-                    <div class="space-y-4 flex-1">
-                        <div class="flex gap-3 items-start p-2.5 rounded-xl hover:bg-slate-50 transition">
-                            <div class="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center text-sm flex-shrink-0">
-                                <i class="fa-solid fa-envelope-open-text"></i>
-                            </div>
-                            <div class="min-w-0">
-                                <h5 class="text-xs font-bold text-slate-900 truncate">New Leave Request: Jane Doe</h5>
-                                <p class="text-[11px] text-slate-500 mt-0.5">Annual Leave Request for Oct 12-15</p>
-                                <span class="text-[10px] text-slate-400 uppercase font-semibold mt-1 block">2 minutes ago</span>
-                            </div>
-                        </div>
-
-                        <div class="flex gap-3 items-start p-2.5 rounded-xl hover:bg-slate-50 transition">
-                            <div class="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-sm flex-shrink-0">
-                                <i class="fa-solid fa-cake-candles"></i>
-                            </div>
-                            <div class="min-w-0">
-                                <h5 class="text-xs font-bold text-slate-900 truncate">Employee Anniversary</h5>
-                                <p class="text-[11px] text-slate-500 mt-0.5">Mark Smith celebrates 5 years today!</p>
-                                <span class="text-[10px] text-slate-400 uppercase font-semibold mt-1 block">1 hour ago</span>
-                            </div>
-                        </div>
-
-                        <div class="flex gap-3 items-start p-2.5 rounded-xl hover:bg-slate-50 transition">
-                            <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm flex-shrink-0">
-                                <i class="fa-solid fa-receipt"></i>
-                            </div>
-                            <div class="min-w-0">
-                                <h5 class="text-xs font-bold text-slate-900 truncate">Payroll Processed</h5>
-                                <p class="text-[11px] text-slate-500 mt-0.5">Monthly salary statements are ready.</p>
-                                <span class="text-[10px] text-slate-400 uppercase font-semibold mt-1 block">3 hours ago</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <button class="w-full mt-4 text-center text-xs font-bold text-slate-500 hover:text-indigo-600 transition pt-3 border-t border-slate-100 tracking-wide uppercase">
-                        View All Notifications
-                    </button>
-                </div>
-
-            </div>
-             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                <div class="bg-white p-6 border border-slate-200 rounded-2xl shadow-sm flex flex-col">
-                    <div class="mb-4">
-                        <h4 class="text-base font-bold text-slate-900">Upcoming Holidays</h4>
-                        <p class="text-xs text-slate-400 mt-0.5">Month: October 2023</p>
-                    </div>
-
-                    <div class="space-y-4 flex-1">
-                        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                            <div>
-                                <h5 class="text-xs font-bold text-slate-900">National Unity Day</h5>
-                                <p class="text-[11px] text-emerald-600 font-semibold mt-0.5">Public Holiday</p>
-                            </div>
-                            <div class="text-right">
-                                <span class="text-[10px] font-bold text-slate-400 uppercase block">OCT</span>
-                                <span class="text-lg font-extrabold text-slate-800 leading-none">14</span>
-                            </div>
-                        </div>
-
-                        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                            <div>
-                                <h5 class="text-xs font-bold text-slate-900">Halloween Break</h5>
-                                <p class="text-[11px] text-amber-600 font-semibold mt-0.5">Corporate Day Off</p>
-                            </div>
-                            <div class="text-right">
-                                <span class="text-[10px] font-bold text-slate-400 uppercase block">OCT</span>
-                                <span class="text-lg font-extrabold text-slate-800 leading-none">31</span>
-                            </div>
-                        </div>
-
-                        <div class="flex items-center justify-between p-3 rounded-xl opacity-60 bg-slate-50 border border-slate-100">
-                            <div>
-                                <h5 class="text-xs font-bold text-slate-900">All Saints' Day</h5>
-                                <p class="text-[11px] text-slate-500 font-semibold mt-0.5">Upcoming Next Month</p>
-                            </div>
-                            <div class="text-right">
-                                <span class="text-[10px] font-bold text-slate-400 uppercase block">NOV</span>
-                                <span class="text-lg font-extrabold text-slate-800 leading-none">01</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white border border-slate-200 rounded-2xl shadow-sm lg:col-span-2 flex flex-col overflow-hidden">
-                    <div class="p-6 border-b border-slate-100 flex justify-between items-center">
-                        <div>
-                            <h4 class="text-base font-bold text-slate-900">Today's Attendance Detail</h4>
-                            <p class="text-xs text-slate-500 mt-0.5">Live feed of employee clock-ins</p>
-                        </div>
-                        <button class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition">
-                            <i class="fa-solid fa-ellipsis-vertical"></i>
-                        </button>
-                    </div>
-
-                    <div class="overflow-x-auto flex-1">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-slate-50 text-[10px] font-bold text-slate-400 tracking-wider uppercase border-b border-slate-100">
-                     <th class="py-3 px-6">Employee</th>
-                                    <th class="py-3 px-6">Department</th>
-                                    <th class="py-3 px-6">Clock-In</th>
-                                    <th class="py-3 px-6">Status</th>
-                                    <th class="py-3 px-6 text-center">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-100 text-xs font-medium text-slate-600">
-                                <tr class="hover:bg-slate-50/80 transition">
-                                    <td class="py-3.5 px-6 flex items-center gap-3">
-                                        <div class="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-[10px]">RW</div>
-                                        <span class="font-bold text-slate-900">Robert J. Wilson</span>
-                                    </td>
-                                    <td class="py-3.5 px-6">Engineering</td>
-                                    <td class="py-3.5 px-6 font-mono text-slate-500">08:45 AM</td>
-                                    <td class="py-3.5 px-6">
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> PRESENT
+</div>
+</div>
+<!-- Recent Activities / Attendance Table -->
+<div class="xl:col-span-3 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
+<div class="p-lg border-b border-outline-variant flex justify-between items-center">
+<div>
+<h4 class="font-headline-sm text-headline-sm text-primary">Today's Attendance Detail</h4>
+<p class="text-body-sm text-on-surface-variant">Live feed of employee clock-ins</p>
+</div>
+<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-full">more_vert</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low">
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">EMPLOYEE</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">DEPARTMENT</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">CLOCK-IN</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">STATUS</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/30">
+<tr class="hover:bg-secondary/5 transition-colors">
+<td class="px-lg py-md">
+<div class="flex items-center gap-sm">
+<img src="https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
+<span class="text-body-sm font-semibold text-primary">Kay Ko</span>
+</div>
+</td>
+<td class="px-lg py-md text-body-sm text-on-surface-variant">Artificial Intelligence & Automation</td>
+<td class="px-lg py-md text-body-sm font-data-mono">08:45 AM</td>
+<td class="px-lg py-md">
+<span class="inline-flex items-center gap-xs px-sm py-base rounded-full bg-secondary-container/30 text-secondary text-[10px] font-bold">
+<span class="w-1.5 h-1.5 bg-secondary rounded-full"></span> PRESENT
                                         </span>
-                                    </td>
-                                    <td class="py-3.5 px-6 text-center">
-                                        <button class="text-slate-400 hover:text-indigo-600 transition"><i class="fa-regular fa-eye text-sm"></i></button>
-                                    </td>
-                                </tr>
-                                <tr class="hover:bg-slate-50/80 transition">
-                                    <td class="py-3.5 px-6 flex items-center gap-3">
-                                        <div class="w-7 h-7 rounded-full bg-pink-100 text-pink-700 font-bold flex items-center justify-center text-[10px]">SK</div>
-                                        <span class="font-bold text-slate-900">Sarah Kensington</span>
-                                    </td>
-                                    <td class="py-3.5 px-6">Marketing</td>
-                                    <td class="py-3.5 px-6 font-mono text-slate-500">09:15 AM</td>
-                                    <td class="py-3.5 px-6">
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> LATE
+</td>
+</tr>
+<tr class="hover:bg-secondary/5 transition-colors">
+<td class="px-lg py-md">
+<div class="flex items-center gap-sm">
+<img src="https://i.pinimg.com/736x/16/a0/34/16a034c977760cd8185e279393265d3a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
+<span class="text-body-sm font-semibold text-primary">Sara</span>
+</div>
+</td>
+<td class="px-lg py-md text-body-sm text-on-surface-variant">Infrastructure & Network Operations</td>
+<td class="px-lg py-md text-body-sm font-data-mono">09:15 AM</td>
+<td class="px-lg py-md">
+<span class="inline-flex items-center gap-xs px-sm py-base rounded-full bg-error-container/30 text-error text-[10px] font-bold">
+<span class="w-1.5 h-1.5 bg-error rounded-full"></span> LATE
                                         </span>
-                                    </td>
-                                    <td class="py-3.5 px-6 text-center">
-                                        <button class="text-slate-400 hover:text-indigo-600 transition"><i class="fa-regular fa-eye text-sm"></i></button>
-                                    </td>
-                                </tr>
-                                <tr class="hover:bg-slate-50/80 transition">
-                                    <td class="py-3.5 px-6 flex items-center gap-3">
-                                        <div class="w-7 h-7 rounded-full bg-teal-100 text-teal-700 font-bold flex items-center justify-center text-[10px]">MA</div>
-                                        <span class="font-bold text-slate-900">Marcus Aurelius</span>
-                                    </td>
-                                    <td class="py-3.5 px-6">Design</td>
-                             <td class="py-3.5 px-6 font-mono text-slate-500">08:58 AM</td>
-                                    <td class="py-3.5 px-6">
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> PRESENT
+</td>
+</tr>
+<tr class="hover:bg-secondary/5 transition-colors">
+<td class="px-lg py-md">
+<div class="flex items-center gap-sm">
+<img src="https://i.pinimg.com/736x/b2/22/c9/b222c9b29c5ca95e739e45072f04f715.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
+<span class="text-body-sm font-semibold text-primary">Alina</span>
+</div>
+</td>
+<td class="px-lg py-md text-body-sm text-on-surface-variant"> Cyber Security </td>
+<td class="px-lg py-md text-body-sm font-data-mono">08:58 AM</td>
+<td class="px-lg py-md">
+<span class="inline-flex items-center gap-xs px-sm py-base rounded-full bg-secondary-container/30 text-secondary text-[10px] font-bold">
+<span class="w-1.5 h-1.5 bg-secondary rounded-full"></span> PRESENT
                                         </span>
-                                    </td>
-                                    <td class="py-3.5 px-6 text-center">
-                                        <button class="text-slate-400 hover:text-indigo-600 transition"><i class="fa-regular fa-eye text-sm"></i></button>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-            </div>
-
-        </div>
-    </main>
-
-</body>
-</html>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Micro-interaction Scripts -->
+<script>
+        // Simple entrance animation for chart bars
+        document.addEventListener('DOMContentLoaded', () => {
+            const bars = document.querySelectorAll('.chart-bar');
+            bars.forEach(bar => {
+                const finalHeight = bar.style.height;
+                bar.style.height = '0';
+                setTimeout(() => {
+                    bar.style.height = finalHeight;
+                }, 300);
+            });
+        });
+    </script>
+</body></html>

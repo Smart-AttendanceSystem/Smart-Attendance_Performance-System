@@ -1,308 +1,393 @@
- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Portal - Settings & Security</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title> &amp;Admin</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<!-- Icons -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Scripts -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-high": "#e7e8e9",
+                    "on-primary-container": "#96a9be",
+                    "surface-bright": "#f8f9fa",
+                    "on-tertiary-fixed-variant": "#6c228c",
+                    "tertiary-container": "#611381",
+                    "error-container": "#ffdad6",
+                    "surface-dim": "#d9dadb",
+                    "secondary": "#006b58",
+                    "primary-fixed-dim": "#b5c8df",
+                    "on-background": "#191c1d",
+                    "inverse-surface": "#2e3132",
+                    "secondary-fixed-dim": "#65dabc",
+                    "secondary-container": "#82f7d8",
+                    "on-primary-fixed": "#091d2e",
+                    "error": "#ba1a1a",
+                    "surface-tint": "#4e6073",
+                    "on-secondary-fixed-variant": "#005142",
+                    "on-tertiary-container": "#d788f6",
+                    "on-primary": "#ffffff",
+                    "primary": "#162839",
+                    "tertiary-fixed-dim": "#ecb2ff",
+                    "on-tertiary": "#ffffff",
+                    "primary-container": "#2c3e50",
+                    "inverse-primary": "#b5c8df",
+                    "on-secondary-container": "#00725e",
+                    "secondary-fixed": "#82f7d8",
+                    "outline": "#74777d",
+                    "on-error-container": "#93000a",
+                    "on-surface": "#191c1d",
+                    "outline-variant": "#c4c6cd",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed": "#f8d8ff",
+                    "on-tertiary-fixed": "#320047",
+                    "surface-container": "#edeeef",
+                    "surface": "#f8f9fa",
+                    "surface-variant": "#e1e3e4",
+                    "on-secondary-fixed": "#002019",
+                    "primary-fixed": "#d1e4fb",
+                    "surface-container-highest": "#e1e3e4",
+                    "surface-container-low": "#f3f4f5",
+                    "on-error": "#ffffff",
+                    "background": "#f8f9fa",
+                    "inverse-on-surface": "#f0f1f2",
+                    "on-primary-fixed-variant": "#36485b",
+                    "on-secondary": "#ffffff",
+                    "tertiary": "#43005e",
+                    "on-surface-variant": "#43474c"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "xs": "8px",
+                    "lg": "24px",
+                    "xl": "32px",
+                    "md": "16px",
+                    "base": "4px",
+                    "gutter": "20px",
+                    "sm": "12px",
+                    "sidebar-width": "260px"
+            },
+            "fontFamily": {
+                    "headline-md": ["Hanken Grotesk"],
+                    "body-md": ["Inter"],
+                    "headline-sm": ["Hanken Grotesk"],
+                    "display-lg": ["Hanken Grotesk"],
+                    "label-caps": ["Inter"],
+                    "data-mono": ["JetBrains Mono"],
+                    "body-sm": ["Inter"],
+                    "body-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "data-mono": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
+        .zebra-row:nth-child(even) { background-color: #f3f4f5; }
+        .hover-row:hover { background-color: rgba(0, 107, 88, 0.05); }
+    </style>
 </head>
-<body class="bg-[#f8fafc] text-slate-700 min-h-screen flex font-sans">
+<body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary flex flex-col py-lg border-r border-outline-variant shadow-sm z-50 overflow-y-auto">
+<div class="px-md mb-xl">
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary">Admin</h1>
+<p class="font-body-md text-body-md text-on-primary">HR Management System</p>
+</div>
+<nav class="flex-1 space-y-base">
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="dashboard.php">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-label-caps text-label-caps">Dashboard</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm border-l-4 border-secondary bg-primary-container text-on-primary transition-colors duration-200 cursor-pointer active:scale-95" href="employee_management.php">
+<span class="material-symbols-outlined">groups</span>
+<span class="font-label-caps text-label-caps">Employees</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="department_management.php">
+<span class="material-symbols-outlined">domain</span>
+<span class="font-label-caps text-label-caps">Departments</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="attendenceman.php">
+<span class="material-symbols-outlined">fact_check</span>
+<span class="font-label-caps text-label-caps">Attendance</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="leaverequest.php">
+<span class="material-symbols-outlined">event_busy</span>
+<span class="font-label-caps text-label-caps">Leave Requests</span>
+</a>
+</nav>
 
-    <aside class="w-64 bg-[#1e293b] text-slate-300 flex flex-col fixed h-full z-10">
-        <div class="p-6 border-b border-slate-700">
-            <h1 class="text-xl font-bold text-white tracking-wide">Admin Portal</h1>
-            <p class="text-[10px] text-slate-400 mt-0.5">HR Management System</p>
-        </div>
-        
-        <nav class="flex-1 p-4 space-y-1">
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition">
-                <i class="fa-solid fa-chart-pie text-lg"></i>
-                <span>Dashboard</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition">
-                <i class="fa-solid fa-users text-lg"></i>
-                <span>Employees</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition">
-                <i class="fa-solid fa-sitemap text-lg"></i>
-                <span>Departments</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition">
-                <i class="fa-solid fa-calendar-check text-lg"></i>
-                <span>Attendance</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 hover:text-white transition">
-                <i class="fa-solid fa-envelope-open-text text-lg"></i>
-                <span>Leave Requests</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg bg-indigo-600 text-white font-medium transition mt-auto">
-                <i class="fa-solid fa-gear text-lg"></i>
-                <span>Settings</span>
-            </a>
-        </nav>
+</div>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary transition-colors duration-200" href="admin_setting.php">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-caps text-label-caps">Settings</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary transition-colors duration-200" href="dashboard.php">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-label-caps text-label-caps">Logout</span>
+</a>
+</div>
+</aside>
+<!-- TopNavBar Shell -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface flex justify-between items-center px-lg h-16 z-40 border-b border-outline-variant shadow-sm">
+<div class="flex items-center gap-md">
+<span class="font-headline-sm text-headline-sm font-semibold text-primary">HR Admin</span>
+<div class="relative ml-lg w-80">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="w-full pl-10 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-full text-body-sm focus:outline-none focus:ring-2 focus:ring-secondary/50 transition-all" placeholder="Search settings..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<div class="flex items-center gap-sm">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low transition-all duration-200 rounded-full relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-surface"></span>
+</button>
+</div>
+<div class="h-8 w-[1px] bg-outline-variant mx-sm"></div>
+<button class="flex items-center gap-sm bg-primary text-on-primary px-md py-xs rounded-lg font-body-md hover:opacity-90 transition-all shadow-sm">
+<span class="material-symbols-outlined text-sm">person_add</span>
+                Add Employee
+            </button>
+<div class="flex items-center gap-sm ml-md">
+<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" data-alt="A professional high-resolution corporate headshot of a middle-aged HR executive with a kind smile, wearing a dark navy blazer over a crisp white shirt. The background is a soft-focus modern office interior with warm wooden accents and bright morning sunlight streaming through glass partitions. The lighting is flattering and high-key, conveying a sense of leadership and institutional trust." src="https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-[260px] pt-16 min-h-screen bg-background">
+<div class="max-w-[1600px] mx-auto p-lg">
+<!-- Page Header -->
+<div class="mb-xl">
+<h2 class="font-display-lg text-display-lg text-primary">Settings &amp; Security</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant">Manage your account preferences, security credentials, and system notification rules.</p>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-lg">
+<!-- Profile Edit Card -->
+<div class="col-span-12 lg:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm p-lg overflow-hidden relative">
+<div class="flex justify-between items-start mb-lg">
+<div>
+<h3 class="font-headline-sm text-headline-sm text-primary mb-1">Admin Profile</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Update your public information and avatar.</p>
+</div>
+<button class="text-secondary border border-secondary px-md py-xs rounded-lg font-label-caps hover:bg-secondary/5 transition-all">EDIT PHOTO</button>
+</div>
+<form class="grid grid-cols-1 md:grid-cols-2 gap-md">
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">FULL NAME</label>
+<input class="w-full border border-outline-variant rounded-lg p-sm font-body-md focus:border-secondary focus:ring-0" type="text" value="Alice"/>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">EMAIL ADDRESS</label>
+<input class="w-full border border-outline-variant rounded-lg p-sm font-body-md focus:border-secondary focus:ring-0" type="email" value="alice.h@hr-portal.com"/>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">JOB TITLE</label>
+<input class="w-full border border-outline-variant rounded-lg p-sm font-body-md focus:border-secondary focus:ring-0" type="text" value="Senior HR Administrator"/>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">DEPARTMENT</label>
+<select class="w-full border border-outline-variant rounded-lg p-sm font-body-md focus:border-secondary focus:ring-0">
+<option>Administration</option>
+<option>Operations</option>
+<option>Finance</option>
+</select>
+</div>
+<div class="col-span-full space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">BIO / NOTES</label>
+<textarea class="w-full border border-outline-variant rounded-lg p-sm font-body-md focus:border-secondary focus:ring-0" rows="3">Responsible for system-wide employee oversight and payroll synchronization across all regional offices.</textarea>
+</div>
+</form>
+<div class="mt-lg flex justify-end">
+<button class="bg-secondary text-on-secondary px-xl py-sm rounded-lg font-body-md font-semibold hover:opacity-90 shadow-md transition-all active:scale-95">Save Changes</button>
+</div>
+</div>
+<!-- Security / Password Card -->
+<div class="col-span-12 lg:col-span-4 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm p-lg">
+<h3 class="font-headline-sm text-headline-sm text-primary mb-1">Security</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-lg">Maintain a strong password to protect the HR environment.</p>
+<form class="space-y-md">
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">CURRENT PASSWORD</label>
+<input class="w-full border border-outline-variant rounded-lg p-sm font-body-md focus:border-secondary focus:ring-0" placeholder="••••••••" type="password"/>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">NEW PASSWORD</label>
+<input class="w-full border border-outline-variant rounded-lg p-sm font-body-md focus:border-secondary focus:ring-0" placeholder="••••••••" type="password"/>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">CONFIRM PASSWORD</label>
+<input class="w-full border border-outline-variant rounded-lg p-sm font-body-md focus:border-secondary focus:ring-0" placeholder="••••••••" type="password"/>
+</div>
+<div class="pt-sm">
+<button class="w-full bg-surface-container-high text-primary border border-outline-variant px-md py-sm rounded-lg font-body-md font-semibold hover:bg-outline-variant transition-all">Update Password</button>
+</div>
+</form>
 
-        <div class="p-4 border-t border-slate-700 flex items-center gap-3">
-            <div class="w-10 h-10 rounded-full bg-slate-500 overflow-hidden flex items-center justify-center text-white font-bold">
-                AH
-            </div>
-            <div>
-                <p class="text-sm font-semibold text-white">Admin</p>
-                <p class="text-xs text-slate-400">Super Administrator</p>
-            </div>
-        </div>
-    </aside>
+</div>
+<!-- Notifications Toggle Section -->
+<div class="col-span-12 lg:col-span-6 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm p-lg">
+<h3 class="font-headline-sm text-headline-sm text-primary mb-1">Notifications Settings</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-lg">Define when and how you want to be alerted about staff activities.</p>
+<div class="space-y-md">
 
-    <main class="flex-1 pl-64 min-w-0">
-        
-        <header class="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-8 sticky top-0 z-20">
-            <div class="flex items-center gap-4">
-                <h2 class="text-md font-bold text-slate-800">HR Admin</h2>
-                <div class="relative w-80">
-                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-xs"></i>
-                    <input type="text" placeholder="Search settings..." 
-                           class="w-full pl-9 pr-4 py-1.5 border border-slate-200 rounded-xl bg-slate-50 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                </div>
-            </div>
+<div class="flex items-center justify-between p-sm hover:bg-surface-container-low rounded-lg transition-colors group">
+<div class="flex gap-md">
+<span class="material-symbols-outlined text-secondary group-hover:scale-110 transition-transform">event_note</span>
+<div>
+<p class="font-body-md font-semibold">Leave Request Alerts</p>
+<p class="font-body-sm text-on-surface-variant">Instant notification for urgent leave submissions.</p>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-high rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+</div>
 
-            <div class="flex items-center gap-4">
-                <button class="relative text-slate-500 hover:bg-slate-100 p-2 rounded-lg transition">
-                    <i class="fa-solid fa-bell text-md"></i>
-                    <span class="absolute top-1.5 right-2 w-1.5 h-1.5 bg-red-500 rounded-full"></span>
-             </button>
-                <button class="text-slate-500 hover:bg-slate-100 p-2 rounded-lg transition">
-                    <i class="fa-solid fa-gear text-md"></i>
-                </button>
-                <button class="bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-medium hover:bg-slate-700 transition flex items-center gap-2">
-                    <i class="fa-solid fa-user-plus text-[10px]"></i>
-                    <span>Add Employee</span>
-                </button>
-            </div>
-        </header>
-
-        <div class="p-8 space-y-6 max-w-[1400px] mx-auto">
-            
-            <div>
-                <h3 class="text-xl font-bold text-slate-900">Settings & Security</h3>
-                <p class="text-xs text-slate-500 mt-0.5">Manage your account preferences, security credentials, and system notification rules.</p>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                <div class="bg-white p-6 border border-slate-200 rounded-2xl shadow-sm lg:col-span-2 space-y-4">
-                    <div class="flex justify-between items-center pb-2 border-b border-slate-100">
-                        <div>
-                            <h4 class="text-sm font-bold text-slate-900">Admin Profile</h4>
-                            <p class="text-[11px] text-slate-400 mt-0.5">Update your public information and avatar.</p>
-                        </div>
-                        <button class="text-xs font-semibold border border-slate-200 px-3 py-1.5 rounded-xl hover:bg-slate-50 transition">EDIT PHOTO</button>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="text-[10px] font-bold text-slate-400 block uppercase mb-1">Full Name</label>
-                            <input type="text" value="Alexandra Hamilton" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="text-[10px] font-bold text-slate-400 block uppercase mb-1">Email Address</label>
-                            <input type="email" value="alexandra.h@hr-portal.com" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="text-[10px] font-bold text-slate-400 block uppercase mb-1">Job Title</label>
-                            <input type="text" value="Senior HR Administrator" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="text-[10px] font-bold text-slate-400 block uppercase mb-1">Department</label>
-                            <div class="relative">
-                                <select class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 appearance-none focus:outline-none">
-                                    <option>Administration</option>
-                                </select>
-                                <i class="fa-solid fa-chevron-down absolute right-3 top-3 text-[10px] text-slate-400"></i>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="text-[10px] font-bold text-slate-400 block uppercase mb-1">Bio / Notes</label>
-                        <textarea rows="3" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:outline-none resize-none">Responsible for system-wide employee oversight and payroll synchronization across all regional offices.</textarea>
-                    </div>
-             <div class="flex justify-end pt-2">
-                        <button class="bg-slate-700 text-white text-xs font-semibold px-4 py-2 rounded-xl hover:bg-slate-600 transition">Save Changes</button>
-                    </div>
-                </div>
-
-                <div class="space-y-4">
-                    <div class="bg-white p-6 border border-slate-200 rounded-2xl shadow-sm space-y-3">
-                        <h4 class="text-sm font-bold text-slate-900">Security</h4>
-                        <p class="text-[11px] text-slate-400">Maintain a strong password to protect the HR environment.</p>
-
-                        <div class="space-y-3 pt-2">
-                            <div>
-                                <label class="text-[10px] font-bold text-slate-400 block uppercase mb-1">Current Password</label>
-                                <input type="password" value="••••••••" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:outline-none">
-                            </div>
-                            <div>
-                                <label class="text-[10px] font-bold text-slate-400 block uppercase mb-1">New Password</label>
-                                <input type="password" value="••••••••" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:outline-none">
-                            </div>
-                            <div>
-                                <label class="text-[10px] font-bold text-slate-400 block uppercase mb-1">Confirm Password</label>
-                                <input type="password" value="••••••••" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:outline-none">
-                            </div>
-                        </div>
-
-                        <button class="w-full bg-slate-100 text-slate-700 text-xs font-semibold py-2 rounded-xl hover:bg-slate-200 transition mt-2">Update Password</button>
-                    </div>
-
-                    <div class="bg-red-50/50 border border-red-200 p-5 rounded-2xl shadow-sm flex flex-col gap-2">
-                        <div class="flex gap-2.5 items-start text-red-800">
-                            <i class="fa-solid fa-shield-halved text-sm mt-0.5"></i>
-                            <div>
-                                <h5 class="text-xs font-bold">Two-Factor Auth</h5>
-                                <p class="text-[11px] text-red-600 mt-0.5">Highly recommended for administrative accounts.</p>
-                            </div>
-                        </div>
-                        <button class="w-full bg-red-600 hover:bg-red-700 text-white text-xs font-semibold py-2 rounded-xl transition mt-1 uppercase tracking-wide">Enable Now</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                <div class="bg-white p-6 border border-slate-200 rounded-2xl shadow-sm flex flex-col justify-between">
-                    <div>
-                        <h4 class="text-sm font-bold text-slate-900">Notifications Settings</h4>
-                        <p class="text-[11px] text-slate-400 mt-0.5">Define when and how you want to be alerted about staff activities.</p>
-                        
-                        <div class="mt-5 space-y-5">
-                            <div class="flex justify-between items-start">
-                                <div class="flex gap-3 items-start">
-                                    <i class="fa-regular fa-envelope text-slate-400 text-sm mt-0.5"></i>
-                                    <div>
-                                        <h5 class="text-xs font-bold text-slate-800">Email Summary</h5>
-                                        <p class="text-[11px] text-slate-400 mt-0.5">Receive a daily digest of all attendance logs.</p>
-                         </div>
-                                </div>
-                                <label class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" checked class="sr-only peer">
-                                    <div class="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-slate-800"></div>
-                                </label>
-                            </div>
-
-                            <div class="flex justify-between items-start">
-                                <div class="flex gap-3 items-start">
-                                    <i class="fa-regular fa-calendar text-slate-400 text-sm mt-0.5"></i>
-                                    <div>
-                                        <h5 class="text-xs font-bold text-slate-800">Leave Request Alerts</h5>
-                                        <p class="text-[11px] text-slate-400 mt-0.5">Instant notification for urgent leave submissions.</p>
-                                    </div>
-                                </div>
-                                <label class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" checked class="sr-only peer">
-                                    <div class="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-slate-800"></div>
-                                </label>
-                            </div>
-
-                            <div class="flex justify-between items-start">
-                                <div class="flex gap-3 items-start">
-                                    <i class="fa-solid fa-triangle-exclamation text-slate-400 text-sm mt-0.5"></i>
-                                    <div>
-                                        <h5 class="text-xs font-bold text-slate-800">Security Breaches</h5>
-                                        <p class="text-[11px] text-slate-400 mt-0.5">Alert me for failed login attempts from unknown IPs.</p>
-                                    </div>
-                                </div>
-                                <label class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" checked class="sr-only peer">
-                                    <div class="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-slate-800"></div>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white border border-slate-200 rounded-2xl shadow-sm lg:col-span-2 flex flex-col overflow-hidden">
-                    <div class="p-6 border-b border-slate-100 flex justify-between items-center">
-                        <div>
-                            <h4 class="text-sm font-bold text-slate-900">User Management</h4>
-                            <p class="text-[11px] text-slate-400 mt-0.5">Active administrators on the system.</p>
-                        </div>
-                 <button class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl transition uppercase tracking-wide flex items-center gap-1.5">
-                            <i class="fa-solid fa-user-gear text-[10px]"></i>
-                            <span>Manage Roles</span>
+</div>
+</div>
+<!-- User Management Controls (Access Levels) -->
+<div class="col-span-12 lg:col-span-6 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm p-lg">
+<div class="flex justify-between items-center mb-lg">
+<div>
+<h3 class="font-headline-sm text-headline-sm text-primary mb-1">User Management</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Active administrators on the system.</p>
+</div>
+<button class="bg-primary-container text-on-primary-container px-md py-sm rounded-lg font-label-caps flex items-center gap-xs">
+<span class="material-symbols-outlined text-sm">person_add</span>
+                            MANAGE ROLES
                         </button>
-                    </div>
-
-                    <div class="overflow-x-auto flex-1">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-slate-50 text-[10px] font-bold text-slate-400 tracking-wider uppercase border-b border-slate-100">
-                                    <th class="py-3 px-6">User</th>
-                                    <th class="py-3 px-6">Role</th>
-                                    <th class="py-3 px-6">Status</th>
-                                    <th class="py-3 px-6 text-center">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-100 text-xs font-medium text-slate-600">
-                                <tr class="hover:bg-slate-50/50 transition">
-                                    <td class="py-3 px-6 flex items-center gap-3">
-                                        <div class="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-[10px]">JD</div>
-                                        <div>
-                                            <span class="font-bold text-slate-900 block leading-none">John Doe</span>
-                                            <span class="text-[10px] text-slate-400 font-normal">j.doe@hr-portal.com</span>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-6 text-slate-500">Super Admin</td>
-                                    <td class="py-3 px-6">
-                                        <span class="inline-flex px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 uppercase tracking-wide">Active</span>
-                                    </td>
-                                    <td class="py-3 px-6 text-center">
-                                        <button class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-                                    </td>
-                                </tr>
-                                <tr class="hover:bg-slate-50/50 transition">
-                                    <td class="py-3 px-6 flex items-center gap-3">
-                                        <div class="w-7 h-7 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-[10px]">SM</div>
-                                        <div>
-                                            <span class="font-bold text-slate-900 block leading-none">Sarah Miller</span>
-                                            <span class="text-[10px] text-slate-400 font-normal">s.miller@hr-portal.com</span>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-6 text-slate-500">HR Manager</td>
-                                    <td class="py-3 px-6">
-                                        <span class="inline-flex px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 uppercase tracking-wide">Active</span>
-                                    </td>
-                                    <td class="py-3 px-6 text-center">
-                                        <button class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-                     </td>
-                                </tr>
-                                <tr class="hover:bg-slate-50/50 transition">
-                                    <td class="py-3 px-6 flex items-center gap-3">
-                                        <div class="w-7 h-7 rounded-full bg-amber-100 text-amber-700 font-bold flex items-center justify-center text-[10px]">RB</div>
-                                        <div>
-                                            <span class="font-bold text-slate-900 block leading-none">Robert Brown</span>
-                                            <span class="text-[10px] text-slate-400 font-normal">r.brown@hr-portal.com</span>
-                                        </div>
-                                    </td>
-                                    <td class="py-3 px-6 text-slate-500">Viewer</td>
-                                    <td class="py-3 px-6">
-                                        <span class="inline-flex px-2 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-400 uppercase tracking-wide">Inactive</span>
-                                    </td>
-                                    <td class="py-3 px-6 text-center">
-                                        <button class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="p-3 bg-slate-50/50 border-t border-slate-100 text-right">
-                        <button class="text-[11px] font-semibold text-slate-400 hover:text-indigo-600 transition">View access logs</button>
-                    </div>
-                </div>
-
-            </div>
-
-        </div>
-    </main>
-
-</body>
-</html>
+</div>
+<div class="overflow-hidden border border-outline-variant rounded-lg">
+<table class="w-full text-left font-body-sm">
+<thead class="bg-surface-container font-label-caps text-on-surface-variant border-b border-outline-variant">
+<tr>
+<th class="px-md py-sm">USER</th>
+<th class="px-md py-sm">ROLE</th>
+<th class="px-md py-sm">STATUS</th>
+<th class="px-md py-sm">ACTIONS</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant">
+<tr class="hover:bg-secondary/5 transition-colors group">
+<td class="px-md py-sm">
+<div class="flex items-center gap-sm">
+<div class="h-8 w-8 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container font-bold">JD</div>
+<div>
+<p class="font-semibold text-primary">John </p>
+<p class="text-xs text-on-surface-variant">j@gmail.com</p>
+</div>
+</div>
+</td>
+<td class="px-md py-sm">Data Architect</td>
+<td class="px-md py-sm">
+<span class="px-xs py-[2px] bg-secondary/10 text-secondary border border-secondary/20 rounded text-[10px] font-bold">ACTIVE</span>
+</td>
+<td class="px-md py-sm">
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-sm">more_vert</span></button>
+</td>
+</tr>
+<tr class="hover:bg-secondary/5 transition-colors group">
+<td class="px-md py-sm">
+<div class="flex items-center gap-sm">
+<div class="h-8 w-8 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold">SM</div>
+<div>
+<p class="font-semibold text-primary">Sandi</p>
+<p class="text-xs text-on-surface-variant">sandi@gmail.com</p>
+</div>
+</div>
+</td>
+<td class="px-md py-sm">Helpdesk Supervisor</td>
+<td class="px-md py-sm">
+<span class="px-xs py-[2px] bg-secondary/10 text-secondary border border-secondary/20 rounded text-[10px] font-bold">ACTIVE</span>
+</td>
+<td class="px-md py-sm">
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-sm">more_vert</span></button>
+</td>
+</tr>
+<tr class="hover:bg-secondary/5 transition-colors group">
+<td class="px-md py-sm">
+<div class="flex items-center gap-sm">
+<div class="h-8 w-8 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant font-bold">RB</div>
+<div>
+<p class="font-semibold text-primary">Jay</p>
+<p class="text-xs text-on-surface-variant">Jay@gmail.com</p>
+</div>
+</div>
+</td>
+<td class="px-md py-sm">Viewer</td>
+<td class="px-md py-sm">
+<span class="px-xs py-[2px] bg-outline-variant/10 text-outline border border-outline/20 rounded text-[10px] font-bold uppercase">Inactive</span>
+</td>
+<td class="px-md py-sm">
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-sm">more_vert</span></button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="mt-md text-right">
+<button class="text-secondary font-body-sm hover:underline">View all</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Micro-interaction Script -->
+<script>
+        document.querySelectorAll('button, [role="button"]').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                const ripple = document.createElement('span');
+                ripple.classList.add('ripple');
+                this.appendChild(ripple);
+                setTimeout(() => ripple.remove(), 600);
+            });
+        });
+        
+        // Simple input focus behavior
+        const inputs = document.querySelectorAll('input, select, textarea');
+        inputs.forEach(input => {
+            input.addEventListener('focus', () => {
+                input.parentElement.classList.add('ring-1', 'ring-secondary/20');
+            });
+            input.addEventListener('blur', () => {
+                input.parentElement.classList.remove('ring-1', 'ring-secondary/20');
+            });
+        });
+    </script>
+</body></html>

@@ -1,272 +1,412 @@
- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Department Management Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', sans-serif; }
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Employee Management</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<!-- Icons -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Scripts -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-high": "#e7e8e9",
+                    "on-primary-container": "#96a9be",
+                    "surface-bright": "#f8f9fa",
+                    "on-tertiary-fixed-variant": "#6c228c",
+                    "tertiary-container": "#611381",
+                    "error-container": "#ffdad6",
+                    "surface-dim": "#d9dadb",
+                    "secondary": "#006b58",
+                    "primary-fixed-dim": "#b5c8df",
+                    "on-background": "#191c1d",
+                    "inverse-surface": "#2e3132",
+                    "secondary-fixed-dim": "#65dabc",
+                    "secondary-container": "#82f7d8",
+                    "on-primary-fixed": "#091d2e",
+                    "error": "#ba1a1a",
+                    "surface-tint": "#4e6073",
+                    "on-secondary-fixed-variant": "#005142",
+                    "on-tertiary-container": "#d788f6",
+                    "on-primary": "#ffffff",
+                    "primary": "#162839",
+                    "tertiary-fixed-dim": "#ecb2ff",
+                    "on-tertiary": "#ffffff",
+                    "primary-container": "#2c3e50",
+                    "inverse-primary": "#b5c8df",
+                    "on-secondary-container": "#00725e",
+                    "secondary-fixed": "#82f7d8",
+                    "outline": "#74777d",
+                    "on-error-container": "#93000a",
+                    "on-surface": "#191c1d",
+                    "outline-variant": "#c4c6cd",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed": "#f8d8ff",
+                    "on-tertiary-fixed": "#320047",
+                    "surface-container": "#edeeef",
+                    "surface": "#f8f9fa",
+                    "surface-variant": "#e1e3e4",
+                    "on-secondary-fixed": "#002019",
+                    "primary-fixed": "#d1e4fb",
+                    "surface-container-highest": "#e1e3e4",
+                    "surface-container-low": "#f3f4f5",
+                    "on-error": "#ffffff",
+                    "background": "#f8f9fa",
+                    "inverse-on-surface": "#f0f1f2",
+                    "on-primary-fixed-variant": "#36485b",
+                    "on-secondary": "#ffffff",
+                    "tertiary": "#43005e",
+                    "on-surface-variant": "#43474c"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "xs": "8px",
+                    "lg": "24px",
+                    "xl": "32px",
+                    "md": "16px",
+                    "base": "4px",
+                    "gutter": "20px",
+                    "sm": "12px",
+                    "sidebar-width": "260px"
+            },
+            "fontFamily": {
+                    "headline-md": ["Hanken Grotesk"],
+                    "body-md": ["Inter"],
+                    "headline-sm": ["Hanken Grotesk"],
+                    "display-lg": ["Hanken Grotesk"],
+                    "label-caps": ["Inter"],
+                    "data-mono": ["JetBrains Mono"],
+                    "body-sm": ["Inter"],
+                    "body-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "data-mono": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
+        .zebra-row:nth-child(even) { background-color: #f3f4f5; }
+        .hover-row:hover { background-color: rgba(0, 107, 88, 0.05); }
     </style>
 </head>
-<body class="bg-[#fcfcfd] text-[#475569] min-h-screen flex overflow-x-hidden antialiased">
-
-    <aside class="w-[240px] bg-[#0f172a] text-[#94a3b8] flex flex-col fixed h-full z-20 border-r border-slate-800">
-        <div class="p-5 border-b border-slate-800">
-            <h1 class="text-lg font-bold text-white tracking-tight">Admin Portal</h1>
-            <p class="text-[9px] font-semibold text-slate-500 tracking-wider mt-0.5 uppercase">HR Management System</p>
-        </div>
-        
-        <nav class="flex-1 p-3 space-y-0.5">
-            <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium hover:bg-slate-800/60 hover:text-white transition">
-                <i class="fa-solid fa-chart-pie text-sm opacity-70"></i>
-                <span>Dashboard</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium hover:bg-slate-800/60 hover:text-white transition">
-                <i class="fa-solid fa-users text-sm opacity-70"></i>
-                <span>Employees</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#4f46e5] text-white transition shadow-sm">
-                <i class="fa-solid fa-sitemap text-sm"></i>
-                <span>Departments</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium hover:bg-slate-800/60 hover:text-white transition">
-                <i class="fa-solid fa-calendar text-sm opacity-70"></i>
-                <span>Attendance</span>
-            </a>
-            <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium hover:bg-slate-800/60 hover:text-white transition">
-                <i class="fa-solid fa-envelope-open-text text-sm opacity-70"></i>
-                <span>Leave Requests</span>
-            </a>
-        </nav>
-
-        <div class="p-4 border-t border-slate-800 flex items-center gap-3 bg-slate-900/40">
-            <div class="w-8 h-8 rounded-full bg-slate-700 text-white font-bold flex items-center justify-center text-xs">AD</div>
-            <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold text-white truncate">Admin User</p>
-                <p class="text-[10px] text-slate-500 truncate">Super Administrator</p>
-            </div>
-        </div>
-    </aside>
-
-    <main class="flex-1 pl-[240px] flex flex-col min-w-0">
-        
-        <header class="bg-white border-b border-slate-100 h-14 flex items-center justify-between px-6 sticky top-0 z-10">
-            <div class="relative w-72">
-                <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-                <input type="text" placeholder="Search departments or managers..." 
-                       class="w-full pl-8 pr-3 py-1.5 border border-slate-200/80 rounded-xl bg-slate-50/50 text-xs text-slate-700 focus:outline-none">
-            </div>
-
-            <div class="flex items-center gap-3">
-                <button class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg transition"><i class="fa-solid fa-bell text-sm"></i></button>
-                
-                <button onclick="openAddModal()" class="bg-[#0f172a] text-white px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-slate-800 transition flex items-center gap-1.5 shadow-sm">
- <i class="fa-solid fa-plus text-[10px]"></i>
-                    <span>Add Employee</span>
-                </button>
-            </div>
-        </header>
-
-        <div class="p-6 space-y-6 max-w-[1400px] w-full mx-auto">
-            
-            <div class="flex justify-between items-start">
-                <div>
-                    <h2 class="text-xl font-bold text-[#0f172a] tracking-tight">Department Management</h2>
-                    <p class="text-xs text-[#64748b] mt-0.5">Monitor and manage institutional structures and leadership.</p>
-                </div>
-                <button class="bg-white border border-slate-200 hover:bg-slate-50 text-[#0f172a] text-xs font-bold px-3 py-2 rounded-xl transition flex items-center gap-2 shadow-xs">
-                    <i class="fa-solid fa-building text-slate-400 text-[11px]"></i>
-                    <span>New Department</span>
-                </button>
-            </div>
-
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div class="bg-white p-4 border border-slate-200/70 rounded-2xl shadow-xs">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Departments</p>
-                    <div class="flex items-baseline gap-2 mt-1">
-                        <h3 class="text-xl font-extrabold text-slate-900">12</h3>
-                        <span class="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Active</span>
-                    </div>
-                </div>
-                <div class="bg-white p-4 border border-slate-200/70 rounded-2xl shadow-xs">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Headcount</p>
-                    <div class="flex items-baseline gap-1 mt-1">
-                        <h3 class="text-xl font-extrabold text-slate-900">452</h3>
-                        <span class="text-[9px] text-indigo-600 font-medium ml-1">+4% <i class="fa-solid fa-arrow-up text-[8px]"></i></span>
-                    </div>
-                </div>
-                <div class="bg-white p-4 border border-slate-200/70 rounded-2xl shadow-xs">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Management Ratio</p>
-                    <h3 class="text-xl font-extrabold text-slate-900 mt-1">1:37</h3>
-                </div>
-                <div class="bg-white p-4 border border-slate-200/70 rounded-2xl shadow-xs">
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vacant Positions</p>
-                    <div class="flex items-baseline gap-2 mt-1">
-                        <h3 class="text-xl font-extrabold text-red-500">08</h3>
-                        <span class="text-[8px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded uppercase tracking-wide">Critical</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white border border-slate-200/70 rounded-2xl shadow-xs overflow-hidden flex flex-col justify-between">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-slate-50/70 text-[10px] font-bold text-slate-400 tracking-wider uppercase border-b border-slate-100">
-                            <th class="py-3 px-5">Department Name</th>
-                            <th class="py-3 px-5">Manager</th>
-                            <th class="py-3 px-5">Employee Count</th>
-                            <th class="py-3 px-5">Description</th>
-                            <th class="py-3 px-5 text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100 text-xs text-slate-600">
- <tr class="hover:bg-slate-50/40 transition">
-                            <td class="py-4 px-5 font-semibold text-slate-900">Engineering</td>
-                            <td class="py-4 px-5">
-                                <div class="flex items-center gap-2.5">
-                                    <span class="w-5.5 h-5.5 rounded-full bg-cyan-100 text-cyan-700 font-bold text-[9px] flex items-center justify-center">AS</span>
-                                    <div>
-                                        <p class="font-bold text-slate-800 leading-none">Alex Sterling</p>
-                                        <span class="text-[9px] text-slate-400">CTO</span>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="py-4 px-5 font-semibold text-slate-700">142</td>
-                            <td class="py-4 px-5 text-slate-400 max-w-xs truncate">Product development, system architecture...</td>
-                            <td class="py-4 px-5 text-center space-x-2">
-                                <a href="javascript:void(0)" class="text-slate-400 p-1 cursor-default opacity-80"><i class="fa-solid fa-pencil text-[11px]"></i></a>
-                                <button class="text-slate-400 hover:text-red-500 p-1"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
-                            </td>
-                        </tr>
-                        <tr class="hover:bg-slate-50/40 transition">
-                            <td class="py-4 px-5 font-semibold text-slate-900">Sales & Revenue</td>
-                            <td class="py-4 px-5">
-                                <div class="flex items-center gap-2.5">
-                                    <span class="w-5.5 h-5.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[9px] flex items-center justify-center">RM</span>
-                                    <div>
-                                        <p class="font-bold text-slate-800 leading-none">Rachel Meyer</p>
-                                        <span class="text-[9px] text-slate-400">VP Sales</span>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="py-4 px-5 font-semibold text-slate-700">86</td>
-                            <td class="py-4 px-5 text-slate-400 max-w-xs truncate">Enterprise accounts, global revenue pipelines...</td>
-                            <td class="py-4 px-5 text-center space-x-2">
-                                <a href="javascript:void(0)" class="text-slate-400 p-1 cursor-default opacity-80"><i class="fa-solid fa-pencil text-[11px]"></i></a>
-                                <button class="text-slate-400 hover:text-red-500 p-1"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <div class="px-5 py-3.5 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-xs font-medium text-slate-500">
-                    <div>Showing 1 to 2 of 12 entries</div>
-                    <div class="flex items-center gap-1">
-                        <button class="px-2.5 py-1.5 border border-slate-200 rounded-md bg-white hover:bg-slate-50 transition text-[11px]">Previous</button>
-                        <button class="w-7 h-7 bg-indigo-600 text-white rounded-md font-bold text-[11px]">1</button>
-                        <button class="w-7 h-7 border border-slate-200 rounded-md bg-white hover:bg-slate-50 transition text-[11px]">2</button>
-                        <button class="w-7 h-7 border border-slate-200 rounded-md bg-white hover:bg-slate-50 transition text-[11px]">3</button>
-                        <button class="px-2.5 py-1.5 border border-slate-200 rounded-md bg-white hover:bg-slate-50 transition text-[11px]">Next</button>
-                    </div>
-                </div>
-            </div>
+<body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary flex flex-col py-lg border-r border-outline-variant shadow-sm z-50 overflow-y-auto">
+<div class="px-md mb-xl">
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary">Admin</h1>
+<p class="font-body-md text-body-md text-on-primary">HR Management System</p>
 </div>
-    </main>
+<nav class="flex-1 space-y-base">
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="dashboard.php">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-label-caps text-label-caps">Dashboard</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm border-l-4 border-secondary bg-primary-container text-on-primary transition-colors duration-200 cursor-pointer active:scale-95" href="employee_management.php">
+<span class="material-symbols-outlined">groups</span>
+<span class="font-label-caps text-label-caps">Employees</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="department_management.php">
+<span class="material-symbols-outlined">domain</span>
+<span class="font-label-caps text-label-caps">Departments</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="attendenceman.php">
+<span class="material-symbols-outlined">fact_check</span>
+<span class="font-label-caps text-label-caps">Attendance</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="leaverequest.php">
+<span class="material-symbols-outlined">event_busy</span>
+<span class="font-label-caps text-label-caps">Leave Requests</span>
+</a>
+</nav>
 
-    <div id="add-modal-backdrop" class="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px] z-50 hidden opacity-0 transition-opacity duration-200 flex items-center justify-center p-4">
-        <div id="add-modal-box" class="bg-white w-full max-w-[620px] rounded-xl shadow-2xl overflow-hidden border border-slate-100 transform scale-95 opacity-0 transition-all duration-200 ease-out">
-            
-            <div class="bg-[#334155] px-6 py-4 flex justify-between items-center text-white">
-                <div>
-                    <h3 class="text-sm font-bold tracking-wide">Add New Employee</h3>
-                    <p class="text-[10px] text-slate-400 mt-0.5 font-normal">Create a new record in the HR database</p>
-                </div>
-                <button onclick="closeAddModal()" class="text-slate-400 hover:text-white transition p-1 text-sm"><i class="fa-solid fa-xmark"></i></button>
-            </div>
+</div>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary transition-colors duration-200" href="admin_setting.php">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-caps text-label-caps">Settings</span>
+</a>
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary transition-colors duration-200" href="dashboard.php">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-label-caps text-label-caps">Logout</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<div class="ml-[260px] min-h-screen flex flex-col">
+<!-- TopNavBar -->
+<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface border-b border-outline-variant flex justify-between items-center px-lg h-16 z-40 shadow-sm">
+<div class="flex items-center gap-lg flex-1">
+<span class="font-headline-sm text-headline-sm font-semibold text-primary">HR Admin</span>
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-secondary text-body-md" placeholder="Search by name, department, or ID..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<button class="bg-secondary text-on-secondary px-md py-2 rounded-lg font-label-caps text-label-caps transition-all duration-200 hover:opacity-90 active:scale-95" onclick="document.getElementById('modal-overlay').classList.remove('hidden')">
+                    Add Employee
+                </button>
+<div class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant overflow-hidden ml-sm">
+<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" data-alt="A professional high-resolution corporate headshot of a middle-aged HR executive with a kind smile, wearing a dark navy blazer over a crisp white shirt. The background is a soft-focus modern office interior with warm wooden accents and bright morning sunlight streaming through glass partitions. The lighting is flattering and high-key, conveying a sense of leadership and institutional trust." src="https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg"/>
+</div>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="mt-16 p-lg flex-1">
+<div class="max-w-[1600px] mx-auto space-y-lg">
+<!-- Page Title & Stats Bar -->
+<div class="flex justify-between items-end">
+<div>
+<h2 class="font-headline-md text-headline-md text-primary">Employee Directory</h2>
+<p class="text-on-surface-variant font-body-md">Manage your workforce, positions, and operational status.</p>
+</div>
+<div class="flex gap-md">
+<div class="bg-surface-container-lowest border border-outline-variant p-md rounded-xl shadow-sm flex items-center gap-md">
+<div class="bg-secondary/10 p-2 rounded-lg text-secondary">
+<span class="material-symbols-outlined">groups</span>
+</div>
+<div>
+<p class="text-label-caps font-label-caps text-on-surface-variant">Total Staff</p>
+<p class="text-headline-sm font-headline-sm text-primary">1,284</p>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant p-md rounded-xl shadow-sm flex items-center gap-md">
+<div class="bg-tertiary-container/20 p-2 rounded-lg text-tertiary-container">
+<span class="material-symbols-outlined">person_add</span>
+</div>
+<div>
+<p class="text-label-caps font-label-caps text-on-surface-variant">New This Month</p>
+<p class="text-headline-sm font-headline-sm text-primary">24</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Table Container -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-b border-outline-variant">
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">ID</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Name</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Department</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Position</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Status</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Email</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="font-body-md text-on-surface">
+<!-- Row 1 -->
+<tr class="zebra-row hover-row border-b border-surface-container transition-colors">
+<td class="px-lg py-md font-data-mono text-data-mono">YGN-0005</td>
+<td class="px-lg py-md">
+<div class="flex items-center gap-sm">
+<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden">
+<img src="https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
+</div>
+<span class="font-semibold">Kay Ko</span>
+</div>
+</td>
+<td class="px-lg py-md">Artificial Intelligence & Automation</td>
+<td class="px-lg py-md text-on-surface-variant">Strategy & Management</td>
+<td class="px-lg py-md">
+<span class="inline-flex items-center gap-base px-2 py-1 rounded-full bg-secondary-container text-on-secondary-container text-[11px] font-bold">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> Active
+                                        </span>
+</td>
+<td class="px-lg py-md text-on-surface-variant">Kay@gmail.com</td>
+<td class="px-lg py-md text-right">
+<div class="flex justify-end gap-xs">
+<button class="p-1 hover:bg-primary-container/10 rounded text-primary transition-colors" title="Edit Profile"><span class="material-symbols-outlined text-[18px]">edit</span></button>
+<button class="p-1 hover:bg-tertiary-container/10 rounded text-tertiary transition-colors" title="Reset Password"><span class="material-symbols-outlined text-[18px]">lock_reset</span></button>
+<button class="p-1 hover:bg-error-container/20 rounded text-error transition-colors" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="zebra-row hover-row border-b border-surface-container transition-colors">
+<td class="px-lg py-md font-data-mono text-data-mono">YGN-0043</td>
+<td class="px-lg py-md">
+<div class="flex items-center gap-sm">
+<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden">
+<img src="https://i.pinimg.com/736x/16/a0/34/16a034c977760cd8185e279393265d3a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
+</div>
+<span class="font-semibold">Sara</span>
+</div>
+</td>
+<td class="px-lg py-md">Infrastructure & Network Operations</td>
+<td class="px-lg py-md text-on-surface-variant">Cloud Engineer</td>
+<td class="px-lg py-md">
+<span class="inline-flex items-center gap-base px-2 py-1 rounded-full bg-tertiary-fixed text-on-tertiary-fixed-variant text-[11px] font-bold">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span> On Leave
+                                        </span>
+</td>
+<td class="px-lg py-md text-on-surface-variant">s@gmail.com</td>
+<td class="px-lg py-md text-right">
+<div class="flex justify-end gap-xs">
+<button class="p-1 hover:bg-primary-container/10 rounded text-primary transition-colors" title="Edit Profile"><span class="material-symbols-outlined text-[18px]">edit</span></button>
+<button class="p-1 hover:bg-tertiary-container/10 rounded text-tertiary transition-colors" title="Reset Password"><span class="material-symbols-outlined text-[18px]">lock_reset</span></button>
+<button class="p-1 hover:bg-error-container/20 rounded text-error transition-colors" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="zebra-row hover-row border-b border-surface-container transition-colors">
+<td class="px-lg py-md font-data-mono text-data-mono">YGN-1001</td>
+<td class="px-lg py-md">
+<div class="flex items-center gap-sm">
+<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden">
+<img src="https://i.pinimg.com/736x/b2/22/c9/b222c9b29c5ca95e739e45072f04f715.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
+</div>
+<span class="font-semibold">Alina</span>
+</div>
+</td>
+<td class="px-lg py-md"> Cyber Security</td>
+<td class="px-lg py-md text-on-surface-variant">Security Architect</td>
+<td class="px-lg py-md">
+<span class="inline-flex items-center gap-base px-2 py-1 rounded-full bg-secondary-container text-on-secondary-container text-[11px] font-bold">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> Active
+                                        </span>
+</td>
+<td class="px-lg py-md text-on-surface-variant">Alina@gmail.com</td>
+<td class="px-lg py-md text-right">
+<div class="flex justify-end gap-xs">
+<button class="p-1 hover:bg-primary-container/10 rounded text-primary transition-colors" title="Edit Profile"><span class="material-symbols-outlined text-[18px]">edit</span></button>
+<button class="p-1 hover:bg-tertiary-container/10 rounded text-tertiary transition-colors" title="Reset Password"><span class="material-symbols-outlined text-[18px]">lock_reset</span></button>
+<button class="p-1 hover:bg-error-container/20 rounded text-error transition-colors" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+</div>
+</td>
+</tr>
+<!-- Row 4 -->
 
-            <form class="p-6 space-y-4 text-xs font-semibold text-slate-700" onsubmit="event.preventDefault();">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="space-y-1.5">
-                        <label class="block text-slate-500 font-medium">Full Name</label>
-                        <input type="text" placeholder="e.g. John Doe" class="w-full px-3 py-2 border border-slate-200 rounded-md font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-400">
-                    </div>
-                    <div class="space-y-1.5">
-                        <label class="block text-slate-500 font-medium">Email Address</label>
-                        <input type="email" placeholder="john.doe@company.com" class="w-full px-3 py-2 border border-slate-200 rounded-md font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-400">
-                    </div>
-                </div>
+</tbody>
+</table>
+</div>
+<!-- Pagination Footer -->
+<div class="p-lg bg-surface-container-lowest border-t border-outline-variant flex justify-between items-center">
+<span class="text-body-sm text-on-surface-variant">Showing 1-4 of 1,200 employees</span>
+<div class="flex gap-xs">
+<button class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm disabled:opacity-30" disabled="">Previous</button>
+<button class="px-3 py-1 bg-secondary text-on-secondary rounded text-body-sm font-bold">1</button>
+<button class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm">2</button>
+<button class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm">3</button>
+<button class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm">Next</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Add Employee Modal Overlay -->
+<div class="hidden fixed inset-0 bg-primary/40 backdrop-blur-sm z-[100] flex items-center justify-center p-md" id="modal-overlay">
+<div class="bg-surface-container-lowest w-full max-w-2xl rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-300">
+<!-- Modal Header -->
+<div class="bg-primary p-lg text-on-primary flex justify-between items-center">
+<div>
+<h3 class="font-headline-sm text-headline-sm">Add New Employee</h3>
+<p class="text-on-primary-container text-body-sm">Create a new record in the HR database</p>
+</div>
+<button class="hover:bg-primary-container p-2 rounded-full transition-colors" onclick="document.getElementById('modal-overlay').classList.add('hidden')">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<!-- Modal Body -->
+<form class="p-lg grid grid-cols-1 md:grid-cols-2 gap-lg">
+<div class="space-y-base col-span-2 md:col-span-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Full Name</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" placeholder="e.g. John Doe" type="text"/>
+</div>
+<div class="space-y-base col-span-2 md:col-span-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Email Address</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" placeholder="john.doe@company.com" type="email"/>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Department</label>
+<select class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary">
+<option>Engineering</option>
+<option>Marketing</option>
+<option>Sales</option>
+<option>HR</option>
+<option>Design</option>
+</select>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Position</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" placeholder="e.g. Lead Developer" type="text"/>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Employment Type</label>
+<div class="flex gap-md mt-base">
+<label class="flex items-center gap-xs cursor-pointer">
+<input checked="" class="text-secondary focus:ring-secondary" name="emp_type" type="radio"/>
+<span class="text-body-sm">Full-time</span>
+</label>
+<label class="flex items-center gap-xs cursor-pointer">
+<input class="text-secondary focus:ring-secondary" name="emp_type" type="radio"/>
+<span class="text-body-sm">Contract</span>
+</label>
+</div>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Joining Date</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" type="date"/>
+</div>
+</form>
+<!-- Modal Footer -->
+<div class="p-lg bg-surface-container-low flex justify-end gap-md">
+<button class="px-lg py-2 rounded-lg text-primary hover:bg-surface-container-high transition-colors font-label-caps text-label-caps" onclick="document.getElementById('modal-overlay').classList.add('hidden')">Cancel</button>
+<button class="bg-secondary text-on-secondary px-xl py-2 rounded-lg hover:opacity-90 transition-opacity font-label-caps text-label-caps">Save Employee</button>
+</div>
+</div>
+</div>
+<script>
+        // Simple search interaction mockup
+        const searchInput = document.querySelector('input[type="text"]');
+        searchInput.addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const rows = document.querySelectorAll('.zebra-row');
+            rows.forEach(row => {
+                const text = row.innerText.toLowerCase();
+                row.style.display = text.includes(term) ? '' : 'none';
+            });
+        });
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="space-y-1.5 relative">
-                        <label class="block text-slate-500 font-medium">Department</label>
-                        <select class="w-full px-3 py-2 border border-slate-200 rounded-md bg-white font-medium text-slate-800 focus:outline-none focus:border-slate-400 appearance-none cursor-pointer">
-                            <option>Engineering</option>
-                            <option>Sales & Revenue</option>
-                            <option>Human Resources</option>
-                        </select>
-                        <i class="fa-solid fa-chevron-down absolute right-3 bottom-3 text-slate-400 text-[10px]"></i>
-                    </div>
-                    <div class="space-y-1.5">
-                        <label class="block text-slate-500 font-medium">Position</label>
-                        <input type="text" placeholder="e.g. Lead Developer" class="w-full px-3 py-2 border border-slate-200 rounded-md font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-400">
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="space-y-2">
-                        <label class="block text-slate-500 font-medium">Employment Type</label>
-                        <div class="flex items-center gap-4 pt-1 text-slate-800">
-                            <label class="flex items-center gap-2 cursor-pointer select-none">
-                                <input type="radio" name="emp_type" checked class="w-3.5 h-3.5 text-slate-700 border-slate-300 focus:ring-0">
-                                <span>Full-time</span>
-                            </label>
-                            <label class="flex items-center gap-2 cursor-pointer select-none">
-     <input type="radio" name="emp_type" class="w-3.5 h-3.5 text-slate-700 border-slate-300 focus:ring-0">
-                                <span>Contract</span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="space-y-1.5">
-                        <label class="block text-slate-500 font-medium">Joining Date</label>
-                        <input type="date" class="w-full px-3 py-2 border border-slate-200 rounded-md text-slate-500 focus:outline-none focus:border-slate-400">
-                    </div>
-                </div>
-
-                <div class="flex justify-end items-center gap-2 pt-4 border-t border-slate-100">
-                    <button type="button" onclick="closeAddModal()" class="text-slate-500 hover:text-slate-700 px-4 py-2 font-medium">Cancel</button>
-                    <button type="submit" class="bg-[#2a4b4f] hover:bg-[#1f383b] text-white px-5 py-2 rounded-md shadow-xs transition">Save Employee</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <script>
-        const modalBackdrop = document.getElementById('add-modal-backdrop');
-        const modalBox = document.getElementById('add-modal-box');
-
-        function openAddModal() {
-            modalBackdrop.classList.remove('hidden');
-            setTimeout(() => {
-                modalBackdrop.classList.remove('opacity-0');
-                modalBackdrop.classList.add('opacity-100');
-                modalBox.classList.remove('scale-95', 'opacity-0');
-                modalBox.classList.add('scale-100', 'opacity-100');
-            }, 10);
-        }
-
-        function closeAddModal() {
-            modalBackdrop.classList.remove('opacity-100');
-            modalBackdrop.classList.add('opacity-0');
-            modalBox.classList.remove('scale-100', 'opacity-100');
-            modalBox.classList.add('scale-95', 'opacity-0');
-            setTimeout(() => {
-                modalBackdrop.classList.add('hidden');
-            }, 200);
-        }
+        // Close modal on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.getElementById('modal-overlay').classList.add('hidden');
+            }
+        });
     </script>
-
-</body>
-</html>
+</body></html>

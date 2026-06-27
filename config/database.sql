@@ -66,3 +66,6 @@ CREATE TABLE overtime (
     ot_date DATE NOT NULL,
     hours DECIMAL NOT NULL
 );
+CREATE TABLE noti(
+
+);
