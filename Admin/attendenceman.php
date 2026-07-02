@@ -1,3 +1,64 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/db.php';
+
+$role = $_SESSION['user_role'] ?? '';
+if ($role !== 'admin') {
+    header('Location: ../auth/login.php');
+    exit;
+}
+
+$adminId = (int) ($_SESSION['user_id'] ?? 0);
+$adminName = $_SESSION['user_name'] ?? 'Admin';
+$adminAvatar = $_SESSION['user_avatar'] ?? '';
+if (empty($adminAvatar) && $adminId > 0) {
+    $avQuery = $conn->prepare("SELECT ep.avatar FROM employee_profiles ep WHERE ep.user_id = ?");
+    $avQuery->bind_param('i', $adminId);
+    $avQuery->execute();
+    $avRow = $avQuery->get_result()->fetch_assoc();
+    $adminAvatar = $avRow['avatar'] ?? '';
+    if (!empty($adminAvatar)) $_SESSION['user_avatar'] = $adminAvatar;
+}
+$defaultAvatar = 'https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg';
+$adminAvatarDisplay = !empty($adminAvatar) ? htmlspecialchars($adminAvatar) : $defaultAvatar;
+
+// Today's date
+$today = date('Y-m-d');
+
+// Present today
+$presentStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM attendance a JOIN `user` u ON u.id = a.user_id WHERE u.role = 'employee' AND DATE(a.date) = ? AND LOWER(a.status) = 'present'");
+$presentStmt->bind_param('s', $today);
+$presentStmt->execute();
+$presentToday = (int) $presentStmt->get_result()->fetch_assoc()['cnt'];
+
+// Late today
+$lateStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM attendance a JOIN `user` u ON u.id = a.user_id WHERE u.role = 'employee' AND DATE(a.date) = ? AND LOWER(a.status) = 'late'");
+$lateStmt->bind_param('s', $today);
+$lateStmt->execute();
+$lateToday = (int) $lateStmt->get_result()->fetch_assoc()['cnt'];
+
+// Absent today (recorded as absent)
+$absentStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM attendance a JOIN `user` u ON u.id = a.user_id WHERE u.role = 'employee' AND DATE(a.date) = ? AND LOWER(a.status) = 'absent'");
+$absentStmt->bind_param('s', $today);
+$absentStmt->execute();
+$absentToday = (int) $absentStmt->get_result()->fetch_assoc()['cnt'];
+
+// Also count users with no attendance record today as absent
+$totalUsers = (int) $conn->query("SELECT COUNT(*) FROM `user` WHERE role = 'employee'")->fetch_row()[0];
+$totalAttendedToday = $presentToday + $lateToday + $absentToday;
+if ($totalUsers > $totalAttendedToday) {
+    $absentToday += ($totalUsers - $totalAttendedToday);
+}
+
+// Daily attendance log
+$logResult = $conn->query("SELECT u.id, u.name, a.date, a.check_in, a.check_out, a.status FROM attendance a JOIN `user` u ON u.id = a.user_id WHERE u.role = 'employee' AND DATE(a.date) = CURDATE() ORDER BY a.check_in ASC");
+$attendanceLog = [];
+if ($logResult && $logResult->num_rows > 0) {
+    while ($row = $logResult->fetch_assoc()) {
+        $attendanceLog[] = $row;
+    }
+}
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en"><head>
@@ -116,10 +177,11 @@
     </style>
 </head>
 <body class="bg-background text-on-background overflow-hidden">
+<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 <!-- SideNavBar (Shared Component) -->
-<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50">
+<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 -translate-x-full transition-transform duration-300">
 <div class="px-lg mb-xl">
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Admin</h1>
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight"><?= htmlspecialchars($adminName) ?></h1>
 <p class="font-label-caps text-label-caps text-on-primary opacity-80 mt-base uppercase">HR Management System</p>
 </div>
 <nav class="flex-1 space-y-base px-sm overflow-y-auto custom-scrollbar">
@@ -156,75 +218,68 @@
 </a>
 <div class="flex items-center gap-md px-md py-sm mt-md">
 <div class="w-10 h-10 rounded-full overflow-hidden border-2 border-secondary/30">
-<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" data-alt="A professional high-resolution corporate headshot of a middle-aged HR executive with a kind smile, wearing a dark navy blazer over a crisp white shirt. The background is a soft-focus modern office interior with warm wooden accents and bright morning sunlight streaming through glass partitions. The lighting is flattering and high-key, conveying a sense of leadership and institutional trust." src="https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg"/>
+<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" alt="<?= htmlspecialchars($adminName) ?>" src="<?= $adminAvatarDisplay ?>"/>
 </div>
 <div class="flex flex-col">
-<span class="font-body-sm text-on-primary font-semibold">Admin</span>
+<span class="font-body-sm text-on-primary font-semibold"><?= htmlspecialchars($adminName) ?></span>
 <span class="font-label-caps text-[10px] text-on-primary-container/70">Admin Access</span>
 </div>
 <button class="ml-auto text-on-primary-fixed-variant hover:text-error transition-colors">
-<a class="material-symbols-outlined" href="dashboard.php">logout</a>
+<a class="material-symbols-outlined" href="../auth/logout.php">logout</a>
 </button>
 </div>
 </div>
 </aside>
 <!-- TopNavBar (Shared Component) -->
-<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg h-16 z-40">
-<div class="flex items-center gap-md">
-<div class="relative group">
-<span class="absolute inset-y-0 left-0 pl-md flex items-center pointer-events-none text-outline">
-<span class="material-symbols-outlined text-[20px]">search</span>
-</span>
-<input class="bg-surface-container-low border-none focus:ring-2 focus:ring-secondary/50 rounded-lg pl-xl pr-md py-xs font-body-sm w-72 transition-all duration-200" placeholder="Search employees, reports..." type="text">
-</div>
-</div>
+<header class="fixed top-0 right-0 w-full md:w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg h-16 z-40">
+
 <div class="flex items-center gap-lg">
+<button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
 <div class="flex gap-sm">
-<button class="p-xs text-on-surface-variant hover:bg-surface-container-low transition-all duration-200 rounded-lg relative">
-<span class="material-symbols-outlined">notifications</span>
-<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border border-surface"></span>
-</button>
-</div>
-<button class="bg-secondary text-on-secondary px-md py-xs rounded-lg font-body-sm font-semibold hover:opacity-90 active:scale-95 transition-all flex items-center gap-xs">
-<span class="material-symbols-outlined text-[18px]">add</span>
-                Add Employee
-            </button>
-</div>
-</header>
-<!-- Main Canvas -->
-<main class="ml-[260px] pt-16 h-screen overflow-y-auto bg-background">
-<div class="p-lg max-w-[1600px] mx-auto space-y-lg">
-<!-- Page Header & Filter Controls -->
-<section class="flex flex-col md:flex-row md:items-end justify-between gap-md">
 <div>
 <h2 class="font-headline-md text-headline-md text-primary">Attendance Management</h2>
 <p class="font-body-md text-on-surface-variant">Real-time monitoring of daily employee presence and punctuality.</p>
 </div>
+</div>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="md:ml-[260px] pt-16 h-screen overflow-y-auto bg-background">
+<div class="p-lg max-w-[1600px] mx-auto space-y-lg">
+<!-- Page Header & Filter Controls -->
+<section class="flex flex-col md:flex-row md:items-end justify-between gap-md   ">
+
 <div class="flex items-center gap-sm bg-surface-container-lowest p-xs rounded-xl shadow-sm border border-outline-variant"><div class="flex flex-col px-sm border-r border-outline-variant">
 <label class="font-label-caps text-label-caps text-outline uppercase">Search</label>
-<input class="border-none p-0 focus:ring-0 font-body-sm text-on-surface bg-transparent w-48" placeholder="Username or ID" type="text">
+<input id="attendance-search" class="border-none p-0 focus:ring-0 font-body-sm text-on-surface bg-transparent w-48" placeholder="Username or ID" type="text">
 </div>
 <div class="flex flex-col px-sm">
 <label class="font-label-caps text-label-caps text-outline uppercase">Date Range</label>
-<input class="border-none p-0 focus:ring-0 font-body-sm text-on-surface bg-transparent" type="date" value="2023-10-27">
+<input id="attendance-date" class="border-none p-0 focus:ring-0 font-body-sm text-on-surface bg-transparent" type="date">
 </div>
 <div class="w-px h-8 bg-outline-variant"></div>
 <div class="flex flex-col px-sm min-w-[140px]">
 <label class="font-label-caps text-label-caps text-outline uppercase">Department</label>
-<select class="border-none p-0 focus:ring-0 font-body-sm text-on-surface bg-transparent appearance-none">
-<option>All Departments</option>
-<option>Engineering</option>
+<select id="attendance-department" class="border-none p-0 focus:ring-0 font-body-sm text-on-surface bg-transparent appearance-none">
+<option value="">All Departments</option>
+<option>Software Engineering</option>
+<option>Cyber Security</option>
+<option>Infrastructure & Cloud Operation</option>
+<option>Data Science & Analytics</option>
+<option>Quality Assurance & Testing</option>
+<option>Finance & Procurement</option>
 <option>Human Resources</option>
-<option>Marketing</option>
+<option>Technical Support & Helpdesk</option>
+<option>UI/UX Design</option>
 </select>
 </div>
 <div class="w-px h-8 bg-outline-variant"></div>
 <div class="flex flex-col px-sm min-w-[120px]">
 <label class="font-label-caps text-label-caps text-outline uppercase">Overtime</label>
-<select class="border-none p-0 focus:ring-0 font-body-sm text-on-surface bg-transparent appearance-none">
-<option>All Status</option>
-<option>With Overtime</option>
-<option>No Overtime</option>
+<select id="attendance-overtime" class="border-none p-0 focus:ring-0 font-body-sm text-on-surface bg-transparent appearance-none">
+<option value="">All Status</option>
+<option value="with">With Overtime</option>
+<option value="no">No Overtime</option>
 </select>
 </div>
 </div>
@@ -239,7 +294,7 @@
 <span class="material-symbols-outlined text-[18px]">check_circle</span>
 </div>
 <div class="flex items-baseline gap-xs">
-<span class="font-display-lg text-display-lg text-on-surface">142</span>
+<span class="font-display-lg text-display-lg text-on-surface"><?= $presentToday ?></span>
 </div>
 </div>
 <!-- Absent -->
@@ -250,10 +305,10 @@
 <span class="material-symbols-outlined text-[18px]">cancel</span>
 </span>
 </div>
-<div class="flex items-baseline gap-xs">
-<span class="font-display-lg text-display-lg text-on-surface">12</span>
-</div>
-</div>
+  <div class="flex items-baseline gap-xs">
+            <span class="font-display-lg text-display-lg text-on-surface"><?= $absentToday ?></span>
+        </div>
+    </div>
 <!-- Late -->
 <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-md shadow-sm border-t-4 border-tertiary-container">
 <div class="flex justify-between items-start mb-sm">
@@ -263,9 +318,9 @@
 </span>
 </div>
 <div class="flex items-baseline gap-xs">
-<span class="font-display-lg text-display-lg text-on-surface">8</span>
-</div>
-</div>
+<span class="font-display-lg text-display-lg text-on-surface"><?= $lateToday ?></span>
+        </div>
+    </div>
 <!-- On Leave -->
 
 </section>
@@ -289,141 +344,58 @@
 </tr>
 </thead>
 <tbody class="divide-y divide-outline-variant font-body-md text-on-surface">
-<!-- Row 1: Present -->
+<?php if (!empty($attendanceLog)): ?>
+<?php foreach ($attendanceLog as $log): ?>
+<?php
+$statusLower = strtolower($log['status'] ?? 'present');
+$badgeClass = 'bg-secondary/10 text-on-secondary-container';
+$dotClass = 'bg-secondary';
+if ($statusLower === 'late') {
+    $badgeClass = 'bg-tertiary-fixed text-on-tertiary-fixed-variant';
+    $dotClass = 'bg-tertiary';
+} elseif ($statusLower === 'absent') {
+    $badgeClass = 'bg-error/10 text-on-error-container';
+    $dotClass = 'bg-error';
+} elseif ($statusLower === 'on leave') {
+    $badgeClass = 'bg-surface-variant text-on-surface-variant';
+    $dotClass = 'bg-outline';
+}
+?>
 <tr class="hover:bg-secondary/5 transition-colors group">
 <td class="px-lg py-md">
 <div class="flex items-center gap-sm">
-<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container">
-<img src="https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
-</div>
-<span class="font-semibold">Kay Ko</span>
+<div class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center text-sm font-semibold text-primary"><?= htmlspecialchars(strtoupper(substr($log['name'], 0, 1))) ?></div>
+<span class="font-semibold"><?= htmlspecialchars($log['name'] ?? '—') ?></span>
 </div>
 </td>
-<td class="px-lg py-md font-data-mono text-data-mono text-on-surface-variant">YGN-0005</td>
-<td class="px-lg py-md text-center">Oct 27, 202-</td>
-<td class="px-lg py-md">08:55 AM</td>
-<td class="px-lg py-md"><div class="flex items-center gap-xs"><span class="">05:30 PM</span><span class="material-symbols-outlined text-[14px] text-secondary" title="Extended Shift">add_circle</span></div></td>
-<td class="px-lg py-md font-data-mono text-secondary">00h 35m</td><td class="px-lg py-md">
-<span class="bg-secondary/10 text-on-secondary-container px-sm py-base rounded-full text-[12px] font-semibold flex items-center w-fit gap-xs">
-<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                                        Present
-                                    </span>
-</td>
-<td class="px-lg py-md text-right">
-<button class="opacity-0 group-hover:opacity-100 text-outline hover:text-secondary transition-all">
-<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: &quot;FILL&quot; 0;">edit_note</span>
-</button>
-</td>
-</tr>
-<!-- Row 2: Late -->
-<tr class="hover:bg-secondary/5 transition-colors group">
+<td class="px-lg py-md font-data-mono text-data-mono text-on-surface-variant">UID-<?= str_pad($log['id'], 4, '0', STR_PAD_LEFT) ?></td>
+<td class="px-lg py-md text-center"><?= htmlspecialchars(date('M d, Y', strtotime($log['date']))) ?></td>
+<td class="px-lg py-md"><?= htmlspecialchars($log['check_in'] ?? '--:--') ?></td>
+<td class="px-lg py-md"><?= htmlspecialchars($log['check_out'] ?? '--:--') ?></td>
+<td class="px-lg py-md font-data-mono text-outline">--:--</td>
 <td class="px-lg py-md">
-<div class="flex items-center gap-sm">
-<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container">
-<img src="https://i.pinimg.com/736x/16/a0/34/16a034c977760cd8185e279393265d3a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
-</div>
-<span class="font-semibold">Sara</span>
-</div>
-</td>
-<td class="px-lg py-md font-data-mono text-data-mono text-on-surface-variant">YGN-0043</td>
-<td class="px-lg py-md text-center">Oct 27, 202-</td>
-<td class="px-lg py-md text-error font-medium">09:15 AM</td>
-<td class="px-lg py-md"><div class="flex items-center gap-xs"><span class="">06:05 PM</span><span class="material-symbols-outlined text-[14px] text-secondary" title="Extended Shift">add_circle</span></div></td>
-<td class="px-lg py-md font-data-mono text-secondary">01h 05m</td><td class="px-lg py-md">
-<span class="bg-tertiary-fixed text-on-tertiary-fixed-variant px-sm py-base rounded-full text-[12px] font-semibold flex items-center w-fit gap-xs">
-<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
-                                        Late
-                                    </span>
+<span class="<?= $badgeClass ?> px-sm py-base rounded-full text-[12px] font-semibold flex items-center w-fit gap-xs">
+<span class="w-1.5 h-1.5 rounded-full <?= $dotClass ?>"></span>
+<?= htmlspecialchars(ucfirst($log['status'] ?? 'Present')) ?>
+</span>
 </td>
 <td class="px-lg py-md text-right">
 <button class="opacity-0 group-hover:opacity-100 text-outline hover:text-secondary transition-all">
-<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: &quot;FILL&quot; 0;">edit_note</span>
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 0;">edit_note</span>
 </button>
 </td>
 </tr>
-<!-- Row 3: Absent -->
-<tr class="hover:bg-secondary/5 transition-colors group">
-<td class="px-lg py-md">
-<div class="flex items-center gap-sm">
-<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container">
-<img src="https://i.pinimg.com/736x/b2/22/c9/b222c9b29c5ca95e739e45072f04f715.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
-</div>
-<span class="font-semibold">Alina </span>
-</div>
-</td>
-<td class="px-lg py-md font-data-mono text-data-mono text-on-surface-variant">YGN-1001</td>
-<td class="px-lg py-md text-center">Oct 27, 202-</td>
-<td class="px-lg py-md text-outline">--:--</td>
-<td class="px-lg py-md text-outline">--:--</td>
-<td class="px-lg py-md font-data-mono text-outline">--:--</td><td class="px-lg py-md">
-<span class="bg-error/10 text-on-error-container px-sm py-base rounded-full text-[12px] font-semibold flex items-center w-fit gap-xs">
-<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
-                                        Absent
-                                    </span>
-</td>
-<td class="px-lg py-md text-right">
-<button class="opacity-0 group-hover:opacity-100 text-outline hover:text-secondary transition-all">
-<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: &quot;FILL&quot; 0;">edit_note</span>
-</button>
-</td>
+<?php endforeach; ?>
+<?php else: ?>
+<tr>
+<td class="px-lg py-md text-body-sm text-on-surface-variant text-center" colspan="8">No attendance records found for today.</td>
 </tr>
-<!-- Row 4: Present -->
-<tr class="hover:bg-secondary/5 transition-colors group">
-<td class="px-lg py-md">
-<div class="flex items-center gap-sm">
-<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container">
-<img src="https://i.pinimg.com/1200x/04/82/f4/0482f447e372b130624d4e986f49a39e.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
-</div>
-<span class="font-semibold">A</span>
-</div>
-</td>
-<td class="px-lg py-md font-data-mono text-data-mono text-on-surface-variant">YGN-0201</td>
-<td class="px-lg py-md text-center">Oct 27, 202-</td>
-<td class="px-lg py-md">08:42 AM</td>
-<td class="px-lg py-md"><div class="flex items-center gap-xs"><span class="">05:15 PM</span><span class="material-symbols-outlined text-[14px] text-secondary" title="Extended Shift">add_circle</span></div></td>
-<td class="px-lg py-md font-data-mono text-secondary">00h 15m</td><td class="px-lg py-md">
-<span class="bg-secondary/10 text-on-secondary-container px-sm py-base rounded-full text-[12px] font-semibold flex items-center w-fit gap-xs">
-<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                                        Present
-                                    </span>
-</td>
-<td class="px-lg py-md text-right">
-<button class="opacity-0 group-hover:opacity-100 text-outline hover:text-secondary transition-all">
-<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: &quot;FILL&quot; 0;">edit_note</span>
-</button>
-</td>
-</tr>
-<!-- Row 5: On Leave -->
-<tr class="hover:bg-secondary/5 transition-colors group">
-<td class="px-lg py-md">
-<div class="flex items-center gap-sm">
-<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container">
-<img src="https://i.pinimg.com/736x/5a/57/7a/5a577a7564b82106d6815739c673fbd7.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
-</div>
-<span class="font-semibold">Liam </span>
-</div>
-</td>
-<td class="px-lg py-md font-data-mono text-data-mono text-on-surface-variant">EMP-0229</td>
-<td class="px-lg py-md text-center">Oct 27, 2023</td>
-<td class="px-lg py-md text-outline">--:--</td>
-<td class="px-lg py-md text-outline">--:--</td>
-<td class="px-lg py-md font-data-mono text-outline">--:--</td><td class="px-lg py-md">
-<span class="bg-surface-variant text-on-surface-variant px-sm py-base rounded-full text-[12px] font-semibold flex items-center w-fit gap-xs">
-<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
-                                        On Leave
-                                    </span>
-</td>
-<td class="px-lg py-md text-right">
-<button class="opacity-0 group-hover:opacity-100 text-outline hover:text-secondary transition-all">
-<span class="material-symbols-outlined text-[20px]">edit_note</span>
-</button>
-</td>
-</tr>
+<?php endif; ?>
 </tbody>
 </table>
 </div>
 <div class="px-lg py-md border-t border-outline-variant flex justify-between items-center bg-surface-container-low/30">
-<span class="font-body-sm text-on-surface-variant">Showing 5 of 159 employees</span>
+<span id="attendance-count" class="font-body-sm text-on-surface-variant">Showing <?= count($attendanceLog) ?> of <?= count($attendanceLog) ?> records</span>
 <div class="flex gap-xs">
 <button class="px-md py-xs border border-outline-variant rounded-lg font-body-sm hover:bg-surface-container transition-all">Previous</button>
 <button class="px-md py-xs bg-primary text-on-primary rounded-lg font-body-sm hover:opacity-90 transition-all">Next</button>
@@ -438,14 +410,100 @@
             const rows = document.querySelectorAll('tbody tr');
             rows.forEach(row => {
                 row.addEventListener('mouseenter', () => {
-                    row.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 1";
+                    const icon = row.querySelector('.material-symbols-outlined');
+                    if (icon) icon.style.fontVariationSettings = "'FILL' 1";
                 });
                 row.addEventListener('mouseleave', () => {
-                    row.querySelector('.material-symbols-outlined').style.fontVariationSettings = "'FILL' 0";
+                    const icon = row.querySelector('.material-symbols-outlined');
+                    if (icon) icon.style.fontVariationSettings = "'FILL' 0";
                 });
             });
         });
+
+        const filterAttendanceRows = () => {
+            const search = document.querySelector('#attendance-search').value.trim().toLowerCase();
+            const selectedDate = document.querySelector('#attendance-date').value;
+            const department = document.querySelector('#attendance-department').value;
+            const overtime = document.querySelector('#attendance-overtime').value;
+            const rows = document.querySelectorAll('tbody tr');
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const username = row.dataset.username?.toLowerCase() || '';
+                const id = row.dataset.id?.toLowerCase() || '';
+                const rowDate = row.dataset.date || '';
+                const rowDept = row.dataset.department || '';
+                const rowOvertime = row.dataset.overtime || '';
+
+                const matchesSearch = !search || username.includes(search) || id.includes(search);
+                const matchesDepartment = !department || rowDept === department;
+                const matchesOvertime = !overtime || rowOvertime === overtime;
+                const matchesDate = !selectedDate || rowDate === selectedDate;
+
+                const visible = matchesSearch && matchesDepartment && matchesOvertime && matchesDate;
+                row.style.display = visible ? '' : 'none';
+                if (visible) visibleCount += 1;
+            });
+
+            const countLabel = document.querySelector('#attendance-count');
+            if (countLabel) {
+                countLabel.textContent = `Showing ${visibleCount} of ${rows.length} records`;
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const controls = [
+                document.querySelector('#attendance-search'),
+                document.querySelector('#attendance-date'),
+                document.querySelector('#attendance-department'),
+                document.querySelector('#attendance-overtime')
+            ];
+            controls.forEach(control => {
+                if (control) control.addEventListener('input', filterAttendanceRows);
+            });
+            filterAttendanceRows();
+        });
     </script>
-
-
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    const isOpen = sidebar.classList.contains('translate-x-0');
+    if (isOpen) {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (overlay) overlay.classList.add('hidden');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.width = '100%';
+    } else {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (overlay) overlay.classList.remove('hidden');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.width = '';
+    }
+}
+function setSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    if (window.innerWidth >= 768) {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.width = '';
+    } else {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.width = '100%';
+    }
+    if (overlay) overlay.classList.add('hidden');
+}
+setSidebarState();
+window.addEventListener('resize', setSidebarState);
+</script>
 </body></html>

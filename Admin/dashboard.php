@@ -1,3 +1,162 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/db.php';
+
+$role = $_SESSION['user_role'] ?? '';
+if ($role !== 'admin') {
+    header('Location: ../auth/login.php');
+    exit;
+}
+
+$adminId = (int) ($_SESSION['user_id'] ?? 0);
+$adminName = $_SESSION['user_name'] ?? 'Admin';
+$adminAvatar = $_SESSION['user_avatar'] ?? '';
+if (empty($adminAvatar) && $adminId > 0) {
+    $avQuery = $conn->prepare("SELECT ep.avatar FROM employee_profiles ep WHERE ep.user_id = ?");
+    $avQuery->bind_param('i', $adminId);
+    $avQuery->execute();
+    $avRow = $avQuery->get_result()->fetch_assoc();
+    $adminAvatar = $avRow['avatar'] ?? '';
+    if (!empty($adminAvatar)) $_SESSION['user_avatar'] = $adminAvatar;
+}
+$defaultAvatar = 'https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg';
+$adminAvatarDisplay = !empty($adminAvatar) ? htmlspecialchars($adminAvatar) : $defaultAvatar;
+
+$period = $_GET['period'] ?? 'today';
+$period = in_array($period, ['today', 'week', 'month'], true) ? $period : 'today';
+
+$rangeStart = date('Y-m-d');
+$rangeEnd = date('Y-m-d');
+if ($period === 'week') {
+    $rangeStart = date('Y-m-d', strtotime('monday this week'));
+    $rangeEnd = date('Y-m-d', strtotime('sunday this week'));
+} elseif ($period === 'month') {
+    $rangeStart = date('Y-m-01');
+    $rangeEnd = date('Y-m-t');
+}
+
+$currentMonth = date('m');
+$currentYear = date('Y');
+
+$totalEmployees = 0;
+$newHires = 0;
+$attTotal = 0;
+$attPresent = 0;
+$lateArrivals = 0;
+$attendanceRate = 0;
+$pendingLeaves = 0;
+$perfData = [];
+$notifications = [];
+$upcomingHolidays = [];
+$attendanceRows = [];
+$broadcastMessage = '';
+$broadcastType = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_broadcast'])) {
+    $title = trim($_POST['broadcast_title'] ?? '');
+    $message = trim($_POST['broadcast_message'] ?? '');
+    if ($title !== '' && $message !== '') {
+        $stmt = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (0, ?, ?, 'broadcast')");
+        $stmt->bind_param('ss', $title, $message);
+        if ($stmt->execute()) {
+            $broadcastMessage = 'Notification sent to all employees.';
+            $broadcastType = 'success';
+        } else {
+            $broadcastMessage = 'Failed to send notification.';
+            $broadcastType = 'error';
+        }
+    } else {
+        $broadcastMessage = 'Please fill in all fields.';
+        $broadcastType = 'error';
+    }
+}
+
+$empRes = $conn->query("SELECT COUNT(*) FROM `user` WHERE role = 'employee'");
+if ($empRes) $totalEmployees = (int) $empRes->fetch_row()[0];
+
+$newRes = $conn->query("SELECT COUNT(*) FROM `user` WHERE MONTH(created_at) = $currentMonth AND YEAR(created_at) = $currentYear");
+if ($newRes) $newHires = (int) $newRes->fetch_row()[0];
+
+$attStmt = $conn->prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN LOWER(status) = 'present' THEN 1 ELSE 0 END) AS present, SUM(CASE WHEN LOWER(status) = 'late' THEN 1 ELSE 0 END) AS late FROM attendance WHERE DATE(date) BETWEEN ? AND ?");
+if ($attStmt) {
+    $attStmt->bind_param('ss', $rangeStart, $rangeEnd);
+    $attStmt->execute();
+    $attStats = $attStmt->get_result()->fetch_assoc();
+    $attTotal = (int) ($attStats['total'] ?? 0);
+    $attPresent = (int) ($attStats['present'] ?? 0);
+    $lateArrivals = (int) ($attStats['late'] ?? 0);
+    $attendanceRate = $attTotal > 0 ? round(($attPresent / $attTotal) * 100, 1) : 0;
+}
+
+$plRes = $conn->query("SELECT COUNT(*) FROM leave_requests WHERE LOWER(status) = 'pending'");
+if ($plRes) $pendingLeaves = (int) $plRes->fetch_row()[0];
+
+if ($conn->query("SHOW TABLES LIKE 'performance'")->num_rows > 0) {
+    $perfResult = $conn->query("SELECT month, attendance_percent, late_count FROM performance ORDER BY id DESC LIMIT 5");
+    if ($perfResult && $perfResult->num_rows > 0) {
+        while ($row = $perfResult->fetch_assoc()) {
+            $perfData[] = $row;
+        }
+    }
+}
+if (empty($perfData)) {
+    $perfData = [
+        ['month' => 'WK 01', 'attendance_percent' => 85, 'late_count' => 15],
+        ['month' => 'WK 02', 'attendance_percent' => 92, 'late_count' => 8],
+        ['month' => 'WK 03', 'attendance_percent' => 78, 'late_count' => 22],
+        ['month' => 'WK 04', 'attendance_percent' => 95, 'late_count' => 5],
+        ['month' => 'TODAY', 'attendance_percent' => 88, 'late_count' => 12],
+    ];
+}
+
+if ($conn->query("SHOW TABLES LIKE 'notifications'")->num_rows > 0) {
+    $notifResult = $conn->query("SELECT title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 5");
+    if ($notifResult && $notifResult->num_rows > 0) {
+        while ($row = $notifResult->fetch_assoc()) {
+            $notifications[] = $row;
+        }
+    }
+}
+if (empty($notifications) && $pendingLeaves > 0) {
+    $lrResult = $conn->query("SELECT u.name, lr.reason FROM leave_requests lr LEFT JOIN `user` u ON u.id = lr.user_id WHERE LOWER(lr.status) = 'pending' ORDER BY lr.id DESC LIMIT 5");
+    if ($lrResult && $lrResult->num_rows > 0) {
+        while ($row = $lrResult->fetch_assoc()) {
+            $notifications[] = [
+                'title' => 'Leave request pending',
+                'message' => ($row['name'] ?? 'A staff') . ' requested leave: ' . ($row['reason'] ?? ''),
+                'created_at' => date('Y-m-d H:i:s'),
+            ];
+        }
+    }
+}
+
+if ($conn->query("SHOW TABLES LIKE 'holidays'")->num_rows > 0) {
+    $holResult = $conn->query("SELECT name, date, type FROM holidays WHERE date >= CURDATE() ORDER BY date ASC LIMIT 5");
+    if ($holResult && $holResult->num_rows > 0) {
+        while ($row = $holResult->fetch_assoc()) {
+            $upcomingHolidays[] = $row;
+        }
+    }
+}
+if (empty($upcomingHolidays)) {
+    $upcomingHolidays = [
+        ['name' => 'National Day', 'date' => date('Y-m-01'), 'type' => 'Public Holiday'],
+        ['name' => 'Company Wellness Day', 'date' => date('Y-m-10'), 'type' => 'Company Holiday'],
+        ['name' => 'Annual Festival', 'date' => date('Y-m-24'), 'type' => 'Public Holiday'],
+    ];
+}
+$holidayMonthLabel = date('F Y');
+if (!empty($upcomingHolidays[0]['date'])) {
+    $holidayMonthLabel = date('F Y', strtotime($upcomingHolidays[0]['date']));
+}
+
+$attRowsResult = $conn->query("SELECT u.name, d.name AS department_name, a.check_in, a.status FROM attendance a LEFT JOIN `user` u ON u.id = a.user_id LEFT JOIN departments d ON d.id = u.department_id WHERE DATE(a.date) = CURDATE() ORDER BY a.check_in ASC LIMIT 10");
+if ($attRowsResult && $attRowsResult->num_rows > 0) {
+    while ($row = $attRowsResult->fetch_assoc()) {
+        $attendanceRows[] = $row;
+    }
+}
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en"><head>
@@ -111,13 +270,17 @@
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
         .chart-bar { transition: height 1s ease-in-out; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
+        body { opacity: 0; animation: fadeIn 0.3s ease-in forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
 <body class="text-on-surface bg-background">
+<!-- Sidebar Overlay -->
+<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 <!-- Predicted SideNavBar Component -->
-<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide">
+<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide -translate-x-full transition-transform duration-300">
 <div class="px-md mb-xl">
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Admin</h1>
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight"><?= htmlspecialchars($adminName) ?></h1>
 <p class="font-body-md text-body-md text-on-primary opacity-80">HR Management System</p>
 </div>
 <nav class="flex-grow space-y-1">
@@ -153,17 +316,18 @@
 <span class="font-label-caps text-label-caps">Logout</span>
 </a>
 <div class="px-md mt-md flex items-center gap-sm">
-<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" data-alt="A professional high-resolution corporate headshot of a middle-aged HR executive with a kind smile, wearing a dark navy blazer over a crisp white shirt. The background is a soft-focus modern office interior with warm wooden accents and bright morning sunlight streaming through glass partitions. The lighting is flattering and high-key, conveying a sense of leadership and institutional trust." src="https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg"/>
+<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" alt="<?= htmlspecialchars($adminName) ?>" src="<?= $adminAvatarDisplay ?>"/>
 <div class="flex flex-col">
-<span class="text-on-primary font-semibold text-body-sm">Admin</span>
+<span class="text-on-primary font-semibold text-body-sm"><?= htmlspecialchars($adminName) ?></span>
 <span class="text-on-primary text-[10px]">Super Administrator</span>
 </div>
 </div>
 </div>
 </aside>
 <!-- Predicted TopNavBar Component -->
-<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+<header class="fixed top-0 right-0 w-full md:w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
 <div class="flex items-center gap-lg flex-1">
+<button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
 <div class="relative w-full max-w-md">
 <span class="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
 <input class="w-full bg-surface-container-low border-none rounded-full py-xs pl-xl pr-md text-body-md focus:ring-2 focus:ring-secondary/50" placeholder="Search employees, files, or reports..." type="text"/>
@@ -175,14 +339,14 @@
                 <span class="absolute top-0 right-0 w-2 h-2 bg-error rounded-full"></span>
 </button>
 <div class="h-8 w-[1px] bg-outline-variant mx-xs"></div>
-<button class="bg-secondary text-white px-md py-xs rounded-lg font-body-md flex items-center gap-xs hover:bg-secondary/90 active:scale-95 transition-all">
+<a class="bg-secondary text-white px-md py-xs rounded-lg font-body-md flex items-center gap-xs hover:bg-secondary/90 active:scale-95 transition-all" href="employee_management.php">
 <span class="material-symbols-outlined !text-[18px]">person_add</span>
                 Add Employee
-            </button>
+            </a>
 </div>
 </header>
 <!-- Main Content Canvas -->
-<main class="ml-[260px] pt-16 min-h-screen p-lg max-w-[1600px]">
+<main class="md:ml-[260px] pt-16 min-h-screen p-lg max-w-[1600px]">
 <div class="flex flex-col gap-lg">
 <!-- Welcome Header -->
 <section class="flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
@@ -191,9 +355,9 @@
 <p class="font-body-md text-on-surface-variant">Summary of human resources performance and daily activity.</p>
 </div>
 <div class="flex items-center gap-sm bg-surface-container p-base rounded-lg border border-outline-variant">
-<button class="px-md py-xs rounded text-label-caps bg-surface-container-lowest shadow-sm">TODAY</button>
-<button class="px-md py-xs rounded text-label-caps hover:bg-surface-container-high transition-colors">WEEK</button>
-<button class="px-md py-xs rounded text-label-caps hover:bg-surface-container-high transition-colors">MONTH</button>
+<a href="dashboard.php?period=today" class="px-md py-xs rounded text-label-caps <?= $period === 'today' ? 'bg-surface-container-lowest shadow-sm' : 'hover:bg-surface-container-high transition-colors' ?>">TODAY</a>
+<a href="dashboard.php?period=week" class="px-md py-xs rounded text-label-caps <?= $period === 'week' ? 'bg-surface-container-lowest shadow-sm' : 'hover:bg-surface-container-high transition-colors' ?>">WEEK</a>
+<a href="dashboard.php?period=month" class="px-md py-xs rounded text-label-caps <?= $period === 'month' ? 'bg-surface-container-lowest shadow-sm' : 'hover:bg-surface-container-high transition-colors' ?>">MONTH</a>
 </div>
 </section>
 <!-- KPI Cards Bento Grid -->
@@ -204,24 +368,24 @@
 <span class="material-symbols-outlined text-primary bg-primary-fixed p-xs rounded-lg">groups</span>
 </div>
 <p class="font-label-caps text-label-caps text-on-surface-variant">TOTAL EMPLOYEES</p>
-<h3 class="font-display-lg text-display-lg text-primary mt-xs">1,248</h3>
-<p class="text-[10px] text-on-surface-variant mt-xs italic">12 New hires this month</p>
+<h3 class="font-display-lg text-display-lg text-primary mt-xs"><?= number_format($totalEmployees) ?></h3>
+<p class="text-[10px] text-on-surface-variant mt-xs italic"><?= $newHires ?> New hires this month</p>
 </div>
 <!-- KPI Card: Attendance % -->
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-sm border-t-4 border-secondary transition-transform hover:scale-[1.02]">
 <div class="flex justify-between items-start mb-sm">
 <span class="material-symbols-outlined text-secondary bg-secondary-container p-xs rounded-lg">calendar_today</span></div>
 <p class="font-label-caps text-label-caps text-on-surface-variant">ATTENDANCE RATE</p>
-<h3 class="font-display-lg text-display-lg text-primary mt-xs">94.2%</h3>
-<p class="text-[10px] text-on-surface-variant mt-xs italic">System average: 95.0%</p>
+<h3 class="font-display-lg text-display-lg text-primary mt-xs"><?= $attendanceRate ?>%</h3>
+<p class="text-[10px] text-on-surface-variant mt-xs italic">System average: <?= $attendanceRate ?>%</p>
 </div>
 <!-- KPI Card: Late Arrivals -->
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-sm border-t-4 border-error transition-transform hover:scale-[1.02]">
 <div class="flex justify-between items-start mb-sm">
 <span class="material-symbols-outlined text-error bg-error-container p-xs rounded-lg">schedule</span>
 </div>
-<p class="font-label-caps text-label-caps text-on-surface-variant">LATE ARRIVALS TODAY</p>
-<h3 class="font-display-lg text-display-lg text-primary mt-xs">14</h3>
+<p class="font-label-caps text-label-caps text-on-surface-variant">LATE ARRIVALS <?= $period === 'month' ? 'THIS MONTH' : ($period === 'week' ? 'THIS WEEK' : 'TODAY') ?></p>
+<h3 class="font-display-lg text-display-lg text-primary mt-xs"><?= $lateArrivals ?></h3>
 </div>
 <!-- KPI Card: Pending Leave -->
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-sm border-t-4 border-tertiary-container transition-transform hover:scale-[1.02]">
@@ -230,8 +394,8 @@
 <div class="bg-tertiary-fixed text-on-tertiary-fixed px-xs rounded text-[10px] font-bold">URGENT</div>
 </div>
 <p class="font-label-caps text-label-caps text-on-surface-variant">PENDING LEAVE REQUESTS</p>
-<h3 class="font-display-lg text-display-lg text-primary mt-xs">28</h3>
-<p class="text-[10px] text-on-surface-variant mt-xs italic">8 awaiting your approval</p>
+<h3 class="font-display-lg text-display-lg text-primary mt-xs"><?= $pendingLeaves ?></h3>
+<p class="text-[10px] text-on-surface-variant mt-xs italic"><?= $pendingLeaves ?> awaiting your approval</p>
 </div>
 </section>
 <!-- Charts & Notification Section -->
@@ -257,42 +421,15 @@
 <div class="border-b border-on-surface w-full"></div>
 <div class="border-b border-on-surface w-full"></div>
 </div>
-<!-- Bar Groups -->
+<?php foreach ($perfData as $item): ?>
 <div class="flex flex-col items-center flex-1 group">
 <div class="flex items-end gap-[2px] w-full justify-center h-full">
-<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: 85%;"></div>
-<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: 15%;"></div>
+<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: <?= (int) ($item['attendance_percent'] ?? 0) ?>%;"></div>
+<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: <?= max(5, (int) ($item['late_count'] ?? 0)) ?>%;"></div>
 </div>
-<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant">WK 01</span>
+<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant"><?= htmlspecialchars($item['month'] ?? '') ?></span>
 </div>
-<div class="flex flex-col items-center flex-1 group">
-<div class="flex items-end gap-[2px] w-full justify-center h-full">
-<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: 92%;"></div>
-<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: 8%;"></div>
-</div>
-<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant">WK 02</span>
-</div>
-<div class="flex flex-col items-center flex-1 group">
-<div class="flex items-end gap-[2px] w-full justify-center h-full">
-<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: 78%;"></div>
-<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: 22%;"></div>
-</div>
-<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant">WK 03</span>
-</div>
-<div class="flex flex-col items-center flex-1 group">
-<div class="flex items-end gap-[2px] w-full justify-center h-full">
-<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: 95%;"></div>
-<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: 5%;"></div>
-</div>
-<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant">WK 04</span>
-</div>
-<div class="flex flex-col items-center flex-1 group">
-<div class="flex items-end gap-[2px] w-full justify-center h-full">
-<div class="bg-primary w-6 chart-bar rounded-t-sm" style="height: 88%;"></div>
-<div class="bg-error w-4 chart-bar rounded-t-sm opacity-60" style="height: 12%;"></div>
-</div>
-<span class="text-[10px] font-label-caps mt-sm text-on-surface-variant">TODAY</span>
-</div>
+<?php endforeach; ?>
 </div>
 <div class="flex items-center gap-lg mt-lg">
 <div class="flex items-center gap-xs">
@@ -309,22 +446,30 @@
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-sm">
 <div class="flex justify-between items-center mb-lg">
 <h4 class="font-headline-sm text-headline-sm text-primary">Recent Notifications</h4>
-<span class="bg-error text-white text-[10px] font-bold px-sm py-base rounded-full">1 NEW</span>
+<span class="bg-error text-white text-[10px] font-bold px-sm py-base rounded-full"><?= count($notifications) ?> NEW</span>
 </div>
 <div class="space-y-sm">
-<!-- Notification Item -->
+<?php if (!empty($notifications)): ?>
+<?php foreach ($notifications as $notification): ?>
 <div class="flex gap-md p-sm bg-surface-container-low rounded-lg border border-outline-variant/30 hover:border-secondary transition-colors cursor-pointer">
 <div class="w-10 h-10 rounded-full bg-secondary-container text-secondary flex items-center justify-center shrink-0">
 <span class="material-symbols-outlined">assignment_late</span>
 </div>
 <div>
-<p class="text-body-sm font-semibold text-primary">New Leave Request:Kay Ko</p>
-<p class="text-[11px] text-on-surface-variant mb-base">Annual Leave Request for Oct 12-15</p>
-<span class="text-[10px] text-outline font-data-mono uppercase">2 MINUTES AGO</span>
+<p class="text-body-sm font-semibold text-primary"><?= htmlspecialchars($notification['title']) ?></p>
+<p class="text-[11px] text-on-surface-variant mb-base"><?= htmlspecialchars($notification['message']) ?></p>
+<span class="text-[10px] text-outline font-data-mono uppercase"><?= htmlspecialchars(date('M d, H:i', strtotime($notification['created_at']))) ?></span>
 </div>
 </div>
+<?php endforeach; ?>
+<?php else: ?>
+<div class="text-sm text-on-surface-variant">No new notifications.</div>
+<?php endif; ?>
 </div>
 <button class="w-full mt-lg text-label-caps text-secondary font-bold hover:underline py-sm border border-secondary/20 rounded-lg">VIEW ALL NOTIFICATIONS</button>
+<button onclick="openBroadcastModal()" class="w-full mt-sm text-label-caps text-primary font-bold hover:underline py-sm border border-primary/20 rounded-lg flex items-center justify-center gap-xs">
+<span class="material-symbols-outlined text-sm">campaign</span> SEND NOTIFICATION TO ALL
+</button>
 
 </div>
 </div>
@@ -334,22 +479,20 @@
 <!-- Holidays Summary -->
 <div class="xl:col-span-1 bg-surface-container-lowest border border-outline-variant rounded-xl p-lg shadow-sm">
 <h4 class="font-headline-sm text-headline-sm text-primary mb-lg">Upcoming Holidays</h4>
-<p class="text-body-sm text-on-surface-variant mb-md">Month: October 2023</p>
+<p class="text-body-sm text-on-surface-variant mb-md">Month: <?= htmlspecialchars($holidayMonthLabel) ?></p>
 <div class="space-y-sm">
+<?php foreach ($upcomingHolidays as $holiday): ?>
 <div class="flex items-center gap-md p-xs border-b border-outline-variant/30">
 <div class="bg-primary/10 text-primary w-12 h-12 flex flex-col items-center justify-center rounded-lg">
-<span class="text-xs font-bold">OCT</span>
-<span class="text-lg font-bold">-</span>
+<span class="text-xs font-bold"><?= htmlspecialchars(strtoupper(date('M', strtotime($holiday['date'])))) ?></span>
+<span class="text-lg font-bold"><?= htmlspecialchars(date('d', strtotime($holiday['date']))) ?></span>
 </div>
 <div>
-<p class="text-body-sm font-semibold text-primary">National Day</p>
-<p class="text-[10px] text-on-surface-variant">Public Holiday</p>
+<p class="text-body-sm font-semibold text-primary"><?= htmlspecialchars($holiday['name']) ?></p>
+<p class="text-[10px] text-on-surface-variant"><?= htmlspecialchars($holiday['type']) ?></p>
 </div>
 </div>
-<button class="w-full mt-lg text-label-caps text-secondary font-bold hover:underline py-sm border border-secondary/20 rounded-lg">VIEW ALL</button>
-
-</div>
-
+<?php endforeach; ?>
 </div>
 </div>
 <!-- Recent Activities / Attendance Table -->
@@ -372,51 +515,29 @@
 </tr>
 </thead>
 <tbody class="divide-y divide-outline-variant/30">
+<?php if (!empty($attendanceRows)): ?>
+<?php foreach ($attendanceRows as $record): ?>
 <tr class="hover:bg-secondary/5 transition-colors">
 <td class="px-lg py-md">
 <div class="flex items-center gap-sm">
-<img src="https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
-<span class="text-body-sm font-semibold text-primary">Kay Ko</span>
+<div class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center text-sm font-semibold text-primary"><?= htmlspecialchars(substr($record['name'], 0, 1)) ?></div>
+<span class="text-body-sm font-semibold text-primary"><?= htmlspecialchars($record['name']) ?></span>
 </div>
 </td>
-<td class="px-lg py-md text-body-sm text-on-surface-variant">Artificial Intelligence & Automation</td>
-<td class="px-lg py-md text-body-sm font-data-mono">08:45 AM</td>
+<td class="px-lg py-md text-body-sm text-on-surface-variant"><?= htmlspecialchars($record['department_name'] ?? '') ?></td>
+<td class="px-lg py-md text-body-sm font-data-mono"><?= htmlspecialchars($record['check_in'] ?? '') ?></td>
 <td class="px-lg py-md">
-<span class="inline-flex items-center gap-xs px-sm py-base rounded-full bg-secondary-container/30 text-secondary text-[10px] font-bold">
-<span class="w-1.5 h-1.5 bg-secondary rounded-full"></span> PRESENT
+<span class="inline-flex items-center gap-xs px-sm py-base rounded-full <?= strtolower($record['status'] ?? 'present') === 'late' ? 'bg-error-container/30 text-error' : 'bg-secondary-container/30 text-secondary' ?> text-[10px] font-bold">
+<span class="w-1.5 h-1.5 rounded-full <?= strtolower($record['status'] ?? 'present') === 'late' ? 'bg-error' : 'bg-secondary' ?>"></span> <?= htmlspecialchars(strtoupper($record['status'] ?? 'PRESENT')) ?>
                                         </span>
 </td>
 </tr>
-<tr class="hover:bg-secondary/5 transition-colors">
-<td class="px-lg py-md">
-<div class="flex items-center gap-sm">
-<img src="https://i.pinimg.com/736x/16/a0/34/16a034c977760cd8185e279393265d3a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
-<span class="text-body-sm font-semibold text-primary">Sara</span>
-</div>
-</td>
-<td class="px-lg py-md text-body-sm text-on-surface-variant">Infrastructure & Network Operations</td>
-<td class="px-lg py-md text-body-sm font-data-mono">09:15 AM</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center gap-xs px-sm py-base rounded-full bg-error-container/30 text-error text-[10px] font-bold">
-<span class="w-1.5 h-1.5 bg-error rounded-full"></span> LATE
-                                        </span>
-</td>
+<?php endforeach; ?>
+<?php else: ?>
+<tr>
+<td class="px-lg py-md text-body-sm text-on-surface-variant" colspan="4">No attendance records for today yet.</td>
 </tr>
-<tr class="hover:bg-secondary/5 transition-colors">
-<td class="px-lg py-md">
-<div class="flex items-center gap-sm">
-<img src="https://i.pinimg.com/736x/b2/22/c9/b222c9b29c5ca95e739e45072f04f715.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
-<span class="text-body-sm font-semibold text-primary">Alina</span>
-</div>
-</td>
-<td class="px-lg py-md text-body-sm text-on-surface-variant"> Cyber Security </td>
-<td class="px-lg py-md text-body-sm font-data-mono">08:58 AM</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center gap-xs px-sm py-base rounded-full bg-secondary-container/30 text-secondary text-[10px] font-bold">
-<span class="w-1.5 h-1.5 bg-secondary rounded-full"></span> PRESENT
-                                        </span>
-</td>
-</tr>
+<?php endif; ?>
 </tbody>
 </table>
 </div>
@@ -424,18 +545,103 @@
 </section>
 </div>
 </main>
+<!-- Broadcast Modal -->
+<div id="broadcastModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40" style="display:none;">
+<div class="bg-surface-container-lowest rounded-xl shadow-xl max-w-lg w-full mx-lg">
+<form method="POST" class="p-xl">
+<div class="flex items-center justify-between mb-lg">
+<h4 class="font-headline-sm text-headline-sm text-primary">Send Notification to All Employees</h4>
+<button type="button" onclick="closeBroadcastModal()" class="p-base hover:bg-surface-container-low rounded-lg">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="space-y-md">
+<div class="space-y-xs">
+<label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Title</label>
+<input name="broadcast_title" class="w-full p-md bg-surface-container-low rounded-lg border-none text-body-sm text-primary focus:ring-2 focus:ring-primary/20" placeholder="e.g. Office Closure Notice" required/>
+</div>
+<div class="space-y-xs">
+<label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Message</label>
+<textarea name="broadcast_message" rows="4" class="w-full p-md bg-surface-container-low rounded-lg border-none text-body-sm text-primary focus:ring-2 focus:ring-primary/20 resize-none" placeholder="Enter your message here..." required></textarea>
+</div>
+</div>
+<div class="flex justify-end gap-md mt-xl pt-lg border-t border-outline-variant/30">
+<button type="button" onclick="closeBroadcastModal()" class="px-md py-xs border border-outline-variant text-on-surface-variant rounded-lg hover:bg-surface-container-low transition-colors text-body-sm font-semibold">Cancel</button>
+<button type="submit" name="send_broadcast" class="px-md py-xs bg-primary text-on-primary rounded-lg hover:bg-primary-container transition-colors text-body-sm font-semibold flex items-center gap-xs">
+<span class="material-symbols-outlined text-sm">send</span> Send
+</button>
+</div>
+</form>
+</div>
+</div>
 <!-- Micro-interaction Scripts -->
 <script>
-        // Simple entrance animation for chart bars
-        document.addEventListener('DOMContentLoaded', () => {
-            const bars = document.querySelectorAll('.chart-bar');
-            bars.forEach(bar => {
-                const finalHeight = bar.style.height;
-                bar.style.height = '0';
-                setTimeout(() => {
-                    bar.style.height = finalHeight;
-                }, 300);
-            });
-        });
-    </script>
+function openBroadcastModal() {
+    document.getElementById('broadcastModal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+function closeBroadcastModal() {
+    document.getElementById('broadcastModal').style.display = 'none';
+    document.body.style.overflow = '';
+}
+document.getElementById('broadcastModal').addEventListener('click', function(e) {
+    if (e.target === this) closeBroadcastModal();
+});
+
+<?php if ($broadcastMessage !== ''): ?>
+alert('<?= htmlspecialchars($broadcastMessage) ?>');
+<?php endif; ?>
+
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    const isOpen = sidebar.classList.contains('translate-x-0');
+    if (isOpen) {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (overlay) overlay.classList.add('hidden');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.width = '100%';
+    } else {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (overlay) overlay.classList.remove('hidden');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.width = '';
+    }
+}
+function setSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    if (window.innerWidth >= 768) {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.width = '';
+    } else {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.width = '100%';
+    }
+    if (overlay) overlay.classList.add('hidden');
+}
+setSidebarState();
+window.addEventListener('resize', setSidebarState);
+
+document.addEventListener('DOMContentLoaded', () => {
+    const bars = document.querySelectorAll('.chart-bar');
+    bars.forEach(bar => {
+        const finalHeight = bar.style.height;
+        bar.style.height = '0';
+        setTimeout(() => {
+            bar.style.height = finalHeight;
+        }, 300);
+    });
+});
+</script>
 </body></html>

@@ -1,3 +1,144 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/db.php';
+
+$role = $_SESSION['user_role'] ?? '';
+if ($role !== 'admin') {
+    header('Location: ../auth/login.php');
+    exit;
+}
+
+$adminId = (int) ($_SESSION['user_id'] ?? 0);
+$adminName = $_SESSION['user_name'] ?? 'Admin';
+$adminAvatar = $_SESSION['user_avatar'] ?? '';
+if (empty($adminAvatar) && $adminId > 0) {
+    $avQuery = $conn->prepare("SELECT ep.avatar FROM employee_profiles ep WHERE ep.user_id = ?");
+    $avQuery->bind_param('i', $adminId);
+    $avQuery->execute();
+    $avRow = $avQuery->get_result()->fetch_assoc();
+    $adminAvatar = $avRow['avatar'] ?? '';
+    if (!empty($adminAvatar)) $_SESSION['user_avatar'] = $adminAvatar;
+}
+$defaultAvatar = 'https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg';
+$adminAvatarDisplay = !empty($adminAvatar) ? htmlspecialchars($adminAvatar) : $defaultAvatar;
+
+$today = date('Y-m-d');
+$tab = $_GET['tab'] ?? 'pending';
+$searchTerm = trim($_GET['q'] ?? '');
+$page = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = 5;
+$offset = ($page - 1) * $perPage;
+
+// Active (pending) requests count
+$pendingCount = (int) $conn->query("SELECT COUNT(*) FROM leave_requests lr JOIN `user` u ON u.id = lr.user_id WHERE u.role = 'employee' AND LOWER(lr.status) = 'pending'")->fetch_row()[0];
+
+// Absent today (from attendance where status='absent' + users with no record)
+$absentStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM attendance a JOIN `user` u ON u.id = a.user_id WHERE u.role = 'employee' AND DATE(a.date) = ? AND LOWER(a.status) = 'absent'");
+$absentStmt->bind_param('s', $today);
+$absentStmt->execute();
+$absentToday = (int) $absentStmt->get_result()->fetch_assoc()['cnt'];
+$totalUsers = (int) $conn->query("SELECT COUNT(*) FROM `user` WHERE role = 'employee'")->fetch_row()[0];
+$presentLateStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM attendance a JOIN `user` u ON u.id = a.user_id WHERE u.role = 'employee' AND DATE(a.date) = ? AND LOWER(a.status) IN ('present','late')");
+$presentLateStmt->bind_param('s', $today);
+$presentLateStmt->execute();
+$presentLateToday = (int) $presentLateStmt->get_result()->fetch_assoc()['cnt'];
+$unaccounted = $totalUsers - $presentLateToday - $absentToday;
+if ($unaccounted > 0) {
+    $absentToday += $unaccounted;
+}
+
+// Total leave requests count per status
+$totalApproved = (int) $conn->query("SELECT COUNT(*) FROM leave_requests lr JOIN `user` u ON u.id = lr.user_id WHERE u.role = 'employee' AND LOWER(lr.status) = 'approved'")->fetch_row()[0];
+$totalRejected = (int) $conn->query("SELECT COUNT(*) FROM leave_requests lr JOIN `user` u ON u.id = lr.user_id WHERE u.role = 'employee' AND LOWER(lr.status) = 'rejected'")->fetch_row()[0];
+
+// Pending leave requests (count)
+$pendingCountQuery = "SELECT COUNT(*) AS cnt FROM leave_requests lr LEFT JOIN `user` u ON u.id = lr.user_id WHERE u.role = 'employee' AND LOWER(lr.status) = 'pending'";
+$pendingCountParams = [];
+$pendingCountTypes = '';
+if ($searchTerm !== '') {
+    $pendingCountQuery .= " AND (u.name LIKE ? OR lr.reason LIKE ?)";
+    $searchLike = '%' . $searchTerm . '%';
+    $pendingCountParams = [$searchLike, $searchLike];
+    $pendingCountTypes = 'ss';
+}
+$pendingCountStmt = $conn->prepare($pendingCountQuery);
+if (!empty($pendingCountParams)) {
+    $pendingCountStmt->bind_param($pendingCountTypes, ...$pendingCountParams);
+}
+$pendingCountStmt->execute();
+$totalPending = (int) $pendingCountStmt->get_result()->fetch_assoc()['cnt'];
+$totalPendingPages = max(1, ceil($totalPending / $perPage));
+
+// Pending leave requests (paginated)
+$pendingQuery = "SELECT lr.id, lr.user_id, lr.start_date, lr.end_date, lr.reason, lr.status, u.name FROM leave_requests lr LEFT JOIN `user` u ON u.id = lr.user_id WHERE u.role = 'employee' AND LOWER(lr.status) = 'pending'";
+$pendingParams = [];
+$pendingTypes = '';
+if ($searchTerm !== '') {
+    $pendingQuery .= " AND (u.name LIKE ? OR lr.reason LIKE ?)";
+    $searchLike = '%' . $searchTerm . '%';
+    $pendingParams = [$searchLike, $searchLike];
+    $pendingTypes = 'ss';
+}
+$pendingQuery .= " ORDER BY lr.id DESC LIMIT ? OFFSET ?";
+$pendingParams[] = $perPage;
+$pendingParams[] = $offset;
+$pendingTypes .= 'ii';
+$pendingStmt = $conn->prepare($pendingQuery);
+if (!empty($pendingParams)) {
+    $pendingStmt->bind_param($pendingTypes, ...$pendingParams);
+}
+$pendingStmt->execute();
+$pendingRequests = $pendingStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// Leave history (count)
+$historyCountQuery = "SELECT COUNT(*) AS cnt FROM leave_requests lr LEFT JOIN `user` u ON u.id = lr.user_id WHERE u.role = 'employee' AND LOWER(lr.status) IN ('approved','rejected')";
+$historyCountParams = [];
+$historyCountTypes = '';
+if ($searchTerm !== '') {
+    $historyCountQuery .= " AND (u.name LIKE ? OR lr.reason LIKE ?)";
+    $searchLike = '%' . $searchTerm . '%';
+    $historyCountParams = [$searchLike, $searchLike];
+    $historyCountTypes = 'ss';
+}
+$historyCountStmt = $conn->prepare($historyCountQuery);
+if (!empty($historyCountParams)) {
+    $historyCountStmt->bind_param($historyCountTypes, ...$historyCountParams);
+}
+$historyCountStmt->execute();
+$totalHistory = (int) $historyCountStmt->get_result()->fetch_assoc()['cnt'];
+$totalHistoryPages = max(1, ceil($totalHistory / $perPage));
+
+// Leave history (paginated)
+$historyQuery = "SELECT lr.id, lr.user_id, lr.start_date, lr.end_date, lr.reason, lr.status, u.name FROM leave_requests lr LEFT JOIN `user` u ON u.id = lr.user_id WHERE u.role = 'employee' AND LOWER(lr.status) IN ('approved','rejected')";
+$historyParams = [];
+$historyTypes = '';
+if ($searchTerm !== '') {
+    $historyQuery .= " AND (u.name LIKE ? OR lr.reason LIKE ?)";
+    $searchLike = '%' . $searchTerm . '%';
+    $historyParams = [$searchLike, $searchLike];
+    $historyTypes = 'ss';
+}
+$historyQuery .= " ORDER BY lr.id DESC LIMIT ? OFFSET ?";
+$historyParams[] = $perPage;
+$historyParams[] = $offset;
+$historyTypes .= 'ii';
+$historyStmt = $conn->prepare($historyQuery);
+if (!empty($historyParams)) {
+    $historyStmt->bind_param($historyTypes, ...$historyParams);
+}
+$historyStmt->execute();
+$leaveHistory = $historyStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// Search results for header search box
+$searchResults = [];
+if ($searchTerm !== '') {
+    $searchKeyword = '%' . $searchTerm . '%';
+    $searchStmt = $conn->prepare("SELECT id, name, email, status FROM `user` WHERE role = 'employee' AND (name LIKE ? OR email LIKE ?) ORDER BY name ASC LIMIT 10");
+    $searchStmt->bind_param('ss', $searchKeyword, $searchKeyword);
+    $searchStmt->execute();
+    $searchResults = $searchStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en"><head>
@@ -129,11 +270,12 @@
     </style>
 </head>
 <body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
+<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 <!-- SideNavBar Shell -->
-<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest shadow-sm border-r border-outline-variant dark:border-outline flex flex-col py-lg z-50">
+<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest shadow-sm border-r border-outline-variant dark:border-outline flex flex-col py-lg z-50 -translate-x-full transition-transform duration-300">
 <!-- Brand Header -->
 <div class="px-lg mb-xl">
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Admin</h1>
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight"><?= htmlspecialchars($adminName) ?></h1>
 <p class="font-body-sm text-on-primary opacity-80">HR Management System</p>
 </div>
 <!-- Navigation Links -->
@@ -176,34 +318,29 @@
 </a>
 <div class="px-md mt-lg flex items-center gap-sm">
 <div class="w-10 h-10 rounded-full overflow-hidden border border-outline-variant/30">
-<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" data-alt="A professional high-resolution corporate headshot of a middle-aged HR executive with a kind smile, wearing a dark navy blazer over a crisp white shirt. The background is a soft-focus modern office interior with warm wooden accents and bright morning sunlight streaming through glass partitions. The lighting is flattering and high-key, conveying a sense of leadership and institutional trust." src="https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg"/>
+<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" alt="<?= htmlspecialchars($adminName) ?>" src="<?= $adminAvatarDisplay ?>"/>
 </div>
 <div>
-<p class="font-body-sm font-semibold text-on-primary">Admin</p>
-<p class="text-[10px] uppercase tracking-widest text-on-primary-container">Admin</p>
+<p class="font-body-sm font-semibold text-on-primary"><?= htmlspecialchars($adminName) ?></p>
+<p class="text-[10px] uppercase tracking-widest text-on-primary-container">Super Administrator</p>
 </div>
 </div>
 </div>
 </aside>
 <!-- Main Content Shell -->
-<main class="ml-[260px] min-h-screen">
+<main class="md:ml-[260px] min-h-screen">
 <!-- TopNavBar Shell -->
-<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40">
+<header class="fixed top-0 right-0 w-full md:w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40">
 <div class="flex items-center gap-lg">
+<button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
 <h2 class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-inverse-primary">HR Admin</h2>
-<div class="relative w-80">
+<form class="relative w-80" method="get" action="leaverequest.php">
+<input type="hidden" name="tab" value="<?= htmlspecialchars($tab) ?>" />
 <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
-<input class="w-full h-9 pl-10 pr-4 bg-surface-container-low border-none rounded-lg text-body-sm focus:ring-1 focus:ring-secondary" placeholder="Search employees or departments..." type="text"/>
-</div>
+<input class="w-full h-9 pl-10 pr-4 bg-surface-container-low border-none rounded-lg text-body-sm focus:ring-1 focus:ring-secondary" name="q" placeholder="Search employees or departments..." type="text" value="<?= htmlspecialchars($searchTerm) ?>"/>
+</form>
 </div>
 <div class="flex items-center gap-md">
-<button class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-all duration-200">
-<span class="material-symbols-outlined">notifications</span>
-</button>
-<div class="h-8 w-[1px] bg-outline-variant mx-sm"></div>
-<button class="bg-secondary text-on-secondary px-md py-1.5 rounded-lg font-body-sm font-semibold hover:brightness-110 active:scale-95 transition-all">
-                    Add Employee
-                </button>
 </div>
 </header>
 <!-- Canvas Container -->
@@ -212,38 +349,60 @@
 <div class="mb-lg">
 <div class="flex justify-between items-end mb-lg">
 <div>
-<nav class="flex gap-xs text-[10px] font-label-caps uppercase tracking-widest text-on-surface-variant mb-base">
-<span>Admin</span>
-<span>/</span>
-<span class="text-secondary">Leave Requests</span>
-</nav>
+
 <h3 class="font-display-lg text-display-lg text-primary">Leave Management</h3>
 </div>
-<div class="flex items-center gap-sm bg-surface-container p-1 rounded-xl">
-<button class="flex items-center gap-xs px-md py-2 bg-surface-container-lowest text-primary font-semibold rounded-lg shadow-sm">
+<div class="flex items-center gap-sm bg-surface-container p-1 mt-3 rounded-xl">
+<a href="leaverequest.php?tab=pending" class="flex items-center gap-xs px-md py-2 <?= $tab === 'pending' ? 'bg-surface-container-lowest text-primary font-semibold shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high' ?> rounded-lg transition-all">
 <span class="material-symbols-outlined text-[20px]">pending_actions</span>
                             Pending Requests
-                        </button>
-<button class="flex items-center gap-xs px-md py-2 text-on-surface-variant hover:bg-surface-container-high rounded-lg transition-all">
+                        </a>
+<a href="leaverequest.php?tab=history" class="flex items-center gap-xs px-md py-2 <?= $tab === 'history' ? 'bg-surface-container-lowest text-primary font-semibold shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high' ?> rounded-lg transition-all">
 <span class="material-symbols-outlined text-[20px]">history</span>
                             Leave History
-                        </button>
+                        </a>
 </div>
 </div>
+<?php if ($searchTerm !== '' && !empty($searchResults)): ?>
+<section class="rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-sm mb-lg">
+<h4 class="font-headline-sm text-headline-sm text-primary mb-md">Employee Search Results</h4>
+<div class="space-y-sm">
+<?php foreach ($searchResults as $result): ?>
+<div class="flex items-center justify-between rounded-lg border border-outline-variant/30 bg-surface-container-low p-sm">
+<div>
+<p class="font-semibold text-primary"><?= htmlspecialchars($result['name']) ?></p>
+<p class="text-sm text-on-surface-variant"><?= htmlspecialchars($result['email']) ?></p>
+</div>
+<span class="text-[11px] font-bold uppercase text-secondary"><?= htmlspecialchars($result['status'] ?? 'Active') ?></span>
+</div>
+<?php endforeach; ?>
+</div>
+</section>
+<?php elseif ($searchTerm !== ''): ?>
+<section class="rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-sm mb-lg">
+<p class="text-sm text-on-surface-variant">No matching employees found.</p>
+</section>
+<?php endif; ?>
 <!-- KPI Overview Row -->
 <div class="grid grid-cols-1 md:grid-cols-4 gap-md mb-xl">
 <div class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm border-t-4 border-t-secondary">
 <p class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-xs">Active Requests</p>
 <div class="flex items-baseline gap-xs">
-<span class="font-display-lg text-display-lg text-primary">12</span>
-
+<span class="font-display-lg text-display-lg text-primary"><?= $pendingCount ?></span>
 </div>
 </div>
 
 <div class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm border-t-4 border-t-error">
 <p class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-xs">Absent Today</p>
 <div class="flex items-baseline gap-xs">
-<span class="font-display-lg text-display-lg text-primary">03</span>
+<span class="font-display-lg text-display-lg text-primary"><?= $absentToday ?></span>
+</div>
+</div>
+
+<div class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm border-t-4 border-t-tertiary-container">
+<p class="font-label-caps text-label-caps text-on-surface-variant uppercase mb-xs">Pending Requests</p>
+<div class="flex items-baseline gap-xs">
+<span class="font-display-lg text-display-lg text-primary"><?= $pendingCount ?></span>
 </div>
 </div>
 
@@ -253,8 +412,8 @@
 <!-- Table Toolbar -->
 <div class="px-lg py-md border-b border-outline-variant flex justify-between items-center bg-surface-container-low/30">
 <div class="flex items-center gap-md">
-<span class="font-body-md font-semibold text-primary">Pending Requests</span>
-<span class="bg-primary-container/10 text-primary px-2 py-0.5 rounded text-[10px] font-bold">12 TOTAL</span>
+<span class="font-body-md font-semibold text-primary"><?= $tab === 'history' ? 'Leave History' : 'Pending Requests' ?></span>
+<span class="bg-primary-container/10 text-primary px-2 py-0.5 rounded text-[10px] font-bold"><?= $tab === 'history' ? count($leaveHistory) : count($pendingRequests) ?> TOTAL</span>
 </div>
 
 </div>
@@ -275,22 +434,29 @@
 </tr>
 </thead>
 <tbody class="divide-y divide-outline-variant">
-<!-- Row 1 -->
+<?php if ($tab === 'pending'): ?>
+<?php if (!empty($pendingRequests)): ?>
+<?php foreach ($pendingRequests as $req): ?>
+<?php
+$leaveDays = max(1, (strtotime($req['end_date']) - strtotime($req['start_date'])) / 86400 + 1);
+$initial = strtoupper(substr($req['name'] ?? '?', 0, 1));
+$colors = ['bg-primary-container text-on-primary-container', 'bg-tertiary-container text-on-tertiary-container', 'bg-error-container text-on-error-container', 'bg-surface-dim text-on-surface'];
+$colorKey = abs(crc32($req['name'] ?? $req['id'])) % count($colors);
+?>
 <tr class="hover:bg-secondary/5 transition-colors group">
 <td class="px-lg py-md">
 <div class="flex items-center gap-sm">
-<div class="w-9 h-9 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-bold text-xs">JS</div>
+<div class="w-9 h-9 rounded-full <?= $colors[$colorKey] ?> flex items-center justify-center font-bold text-xs"><?= $initial ?></div>
 <div>
-<p class="font-body-md font-semibold text-primary">Leo</p>
-<p class="text-[11px] text-on-surface-variant">Senior Developer</p>
+<p class="font-body-md font-semibold text-primary"><?= htmlspecialchars($req['name'] ?? 'Unknown') ?></p>
 </div>
 </div>
 </td>
-<td class="px-lg py-md text-body-sm text-primary">Annual Leave</td>
-<td class="px-lg py-md text-body-sm font-data-mono">202-10-24</td>
-<td class="px-lg py-md text-body-sm font-data-mono">202-10-31</td>
-<td class="px-lg py-md text-body-sm font-data-mono">2</td>
-<td class="px-lg py-md text-body-sm text-on-surface-variant italic max-w-[200px] truncate">Family vacation to Italy...</td>
+<td class="px-lg py-md text-body-sm text-primary">Leave Request</td>
+<td class="px-lg py-md text-body-sm font-data-mono"><?= htmlspecialchars(date('M d, Y', strtotime($req['start_date']))) ?></td>
+<td class="px-lg py-md text-body-sm font-data-mono"><?= htmlspecialchars(date('M d, Y', strtotime($req['end_date']))) ?></td>
+<td class="px-lg py-md text-body-sm font-data-mono"><?= $leaveDays ?></td>
+<td class="px-lg py-md text-body-sm text-on-surface-variant italic max-w-[200px] truncate"><?= htmlspecialchars($req['reason']) ?></td>
 <td class="px-lg py-md">
 <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-secondary-container/20 text-on-secondary-container">
 <span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
@@ -311,130 +477,86 @@
 </div>
 </td>
 </tr>
-<!-- Row 2 -->
+<?php endforeach; ?>
+<?php else: ?>
+<tr>
+<td class="px-lg py-md text-body-sm text-on-surface-variant text-center" colspan="8">No pending leave requests found.</td>
+</tr>
+<?php endif; ?>
+<?php else: ?>
+<?php if (!empty($leaveHistory)): ?>
+<?php foreach ($leaveHistory as $req): ?>
+<?php
+$leaveDays = max(1, (strtotime($req['end_date']) - strtotime($req['start_date'])) / 86400 + 1);
+$initial = strtoupper(substr($req['name'] ?? '?', 0, 1));
+$statusLower = strtolower($req['status']);
+$colors = ['bg-primary-container text-on-primary-container', 'bg-tertiary-container text-on-tertiary-container', 'bg-error-container text-on-error-container', 'bg-surface-dim text-on-surface'];
+$colorKey = abs(crc32($req['name'] ?? $req['id'])) % count($colors);
+$statusBadge = $statusLower === 'approved' ? 'bg-secondary/20 text-secondary' : 'bg-error/10 text-error';
+$statusDot = $statusLower === 'approved' ? 'bg-secondary' : 'bg-error';
+?>
 <tr class="hover:bg-secondary/5 transition-colors group">
 <td class="px-lg py-md">
 <div class="flex items-center gap-sm">
-<div class="w-9 h-9 rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center font-bold text-xs">MA</div>
+<div class="w-9 h-9 rounded-full <?= $colors[$colorKey] ?> flex items-center justify-center font-bold text-xs"><?= $initial ?></div>
 <div>
-<p class="font-body-md font-semibold text-primary">Maria</p>
-<p class="text-[11px] text-on-surface-variant">UX Designer</p>
+<p class="font-body-md font-semibold text-primary"><?= htmlspecialchars($req['name'] ?? 'Unknown') ?></p>
 </div>
 </div>
 </td>
-<td class="px-lg py-md text-body-sm text-primary">Sick Leave</td>
-<td class="px-lg py-md text-body-sm font-data-mono">202-10-20</td>
-<td class="px-lg py-md text-body-sm font-data-mono">202-10-21</td>
-<td class="px-lg py-md text-body-sm font-data-mono"></td>1
-<td class="px-lg py-md text-body-sm text-on-surface-variant italic max-w-[200px] truncate">Medical check-up routine</td>
+<td class="px-lg py-md text-body-sm text-primary">Leave Request</td>
+<td class="px-lg py-md text-body-sm font-data-mono"><?= htmlspecialchars(date('M d, Y', strtotime($req['start_date']))) ?></td>
+<td class="px-lg py-md text-body-sm font-data-mono"><?= htmlspecialchars(date('M d, Y', strtotime($req['end_date']))) ?></td>
+<td class="px-lg py-md text-body-sm font-data-mono"><?= $leaveDays ?></td>
+<td class="px-lg py-md text-body-sm text-on-surface-variant italic max-w-[200px] truncate"><?= htmlspecialchars($req['reason']) ?></td>
 <td class="px-lg py-md">
-<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-secondary-container/20 text-on-secondary-container">
-<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                                            Pending
-                                        </span>
+<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase <?= $statusBadge ?>">
+<span class="w-1.5 h-1.5 rounded-full <?= $statusDot ?>"></span>
+<?= htmlspecialchars(ucfirst($req['status'] ?? 'Unknown')) ?>
+</span>
 </td>
 <td class="px-lg py-md text-right">
 <div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-1.5 text-secondary hover:bg-secondary/10 rounded-lg transition-all">
-<span class="material-symbols-outlined text-[20px]">check_circle</span>
-</button>
-<button class="p-1.5 text-error hover:bg-error/10 rounded-lg transition-all">
-<span class="material-symbols-outlined text-[20px]">cancel</span>
-</button>
 <button class="p-1.5 text-on-surface-variant hover:bg-surface-container-high rounded-lg transition-all">
-<span class="material-symbols-outlined text-[20px]">more_vert</span>
+<span class="material-symbols-outlined text-[20px]">visibility</span>
 </button>
 </div>
 </td>
 </tr>
-<!-- Row 3 -->
-<tr class="hover:bg-secondary/5 transition-colors group bg-surface-container-low/20">
-<td class="px-lg py-md">
-<div class="flex items-center gap-sm">
-<div class="w-9 h-9 rounded-full bg-error-container text-on-error-container flex items-center justify-center font-bold text-xs">DB</div>
-<div>
-    <p class="font-body-md font-semibold text-primary">Thandar</p>
-<p class="text-[11px] text-on-surface-variant">Database Administrator</p>
-</div>
-</div>
-</td>
-<td class="px-lg py-md text-body-sm text-primary">Unpaid Leave</td>
-<td class="px-lg py-md text-body-sm font-data-mono">2023-11-05</td>
-<td class="px-lg py-md text-body-sm font-data-mono">2023-11-10</td>
-<td class="px-lg py-md text-body-sm font-data-mono">1</td>
-<td class="px-lg py-md text-body-sm text-on-surface-variant italic max-w-[200px] truncate">Personal development course</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-secondary-container/20 text-on-secondary-container">
-<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                                            Pending
-                                        </span>
-</td>
-<td class="px-lg py-md text-right">
-<div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-1.5 text-secondary hover:bg-secondary/10 rounded-lg transition-all">
-<span class="material-symbols-outlined text-[20px]">check_circle</span>
-</button>
-<button class="p-1.5 text-error hover:bg-error/10 rounded-lg transition-all">
-<span class="material-symbols-outlined text-[20px]">cancel</span>
-</button>
-<button class="p-1.5 text-on-surface-variant hover:bg-surface-container-high rounded-lg transition-all">
-<span class="material-symbols-outlined text-[20px]">more_vert</span>
-</button>
-</div>
-</td>
+<?php endforeach; ?>
+<?php else: ?>
+<tr>
+<td class="px-lg py-md text-body-sm text-on-surface-variant text-center" colspan="8">No leave history found.</td>
 </tr>
-<!-- Row 4 -->
-<tr class="hover:bg-secondary/5 transition-colors group">
-<td class="px-lg py-md">
-<div class="flex items-center gap-sm">
-<div class="w-9 h-9 rounded-full bg-surface-dim text-on-surface flex items-center justify-center font-bold text-xs">KL</div>
-<div>
-<p class="font-body-md font-semibold text-primary">Kelly</p>
-<p class="text-[11px] text-on-surface-variant">QA Engineer</p>
-</div>
-</div>
-</td>
-<td class="px-lg py-md text-body-sm text-primary">Compassionate</td>
-<td class="px-lg py-md text-body-sm font-data-mono">2023-10-18</td>
-<td class="px-lg py-md text-body-sm font-data-mono">2023-10-19</td>
-<td class="px-lg py-md text-body-sm font-data-mono">3</td>
-<td class="px-lg py-md text-body-sm text-on-surface-variant italic max-w-[200px] truncate">Family emergency</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-secondary-container/20 text-on-secondary-container">
-<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                                            Pending
-                                        </span>
-</td>
-<td class="px-lg py-md text-right">
-<div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-1.5 text-secondary hover:bg-secondary/10 rounded-lg transition-all">
-<span class="material-symbols-outlined text-[20px]">check_circle</span>
-</button>
-<button class="p-1.5 text-error hover:bg-error/10 rounded-lg transition-all">
-<span class="material-symbols-outlined text-[20px]">cancel</span>
-</button>
-<button class="p-1.5 text-on-surface-variant hover:bg-surface-container-high rounded-lg transition-all">
-<span class="material-symbols-outlined text-[20px]">more_vert</span>
-</button>
-</div>
-</td>
-</tr>
+<?php endif; ?>
+<?php endif; ?>
 </tbody>
 </table>
 </div>
 <!-- Pagination -->
+<?php
+$totalPages = $tab === 'history' ? $totalHistoryPages : $totalPendingPages;
+if ($page > $totalPages) {
+    $page = $totalPages;
+    $offset = ($page - 1) * $perPage;
+}
+$currentTotal = $tab === 'history' ? count($leaveHistory) : count($pendingRequests);
+$grandTotal = $tab === 'history' ? $totalHistory : $totalPending;
+$pageParam = $searchTerm !== '' ? '&q=' . urlencode($searchTerm) : '';
+$tabParam = 'tab=' . $tab;
+?>
 <div class="px-lg py-sm border-t border-outline-variant flex justify-between items-center bg-surface-container-low/30">
-<p class="text-[11px] font-label-caps text-on-surface-variant uppercase tracking-wider">Showing 4 of 12 Pending Requests</p>
+<p class="text-[11px] font-label-caps text-on-surface-variant uppercase tracking-wider">Showing <?= $currentTotal ?> of <?= $grandTotal ?> Records</p>
 <div class="flex items-center gap-xs">
-<button class="p-1 hover:bg-surface-container rounded border border-outline-variant/30 transition-all text-on-surface-variant disabled:opacity-30" disabled="">
+<a class="p-1 hover:bg-surface-container rounded border border-outline-variant/30 transition-all text-on-surface-variant <?= $page <= 1 ? 'pointer-events-none opacity-30' : '' ?>" href="?<?= $tabParam ?>&page=<?= $page - 1 ?><?= $pageParam ?>">
 <span class="material-symbols-outlined">chevron_left</span>
-</button>
-<button class="w-8 h-8 flex items-center justify-center bg-primary text-on-primary text-[11px] font-bold rounded">1</button>
-<button class="w-8 h-8 flex items-center justify-center hover:bg-surface-container text-primary text-[11px] font-bold rounded">2</button>
-<button class="w-8 h-8 flex items-center justify-center hover:bg-surface-container text-primary text-[11px] font-bold rounded">3</button>
-<button class="p-1 hover:bg-surface-container rounded border border-outline-variant/30 transition-all text-on-surface-variant">
+</a>
+<?php for ($i = 1; $i <= $totalPages; $i++): ?>
+<a class="w-8 h-8 flex items-center justify-center text-[11px] font-bold rounded <?= $i === $page ? 'bg-primary text-on-primary' : 'hover:bg-surface-container text-primary' ?>" href="?<?= $tabParam ?>&page=<?= $i ?><?= $pageParam ?>"><?= $i ?></a>
+<?php endfor; ?>
+<a class="p-1 hover:bg-surface-container rounded border border-outline-variant/30 transition-all text-on-surface-variant <?= $page >= $totalPages ? 'pointer-events-none opacity-30' : '' ?>" href="?<?= $tabParam ?>&page=<?= $page + 1 ?><?= $pageParam ?>">
 <span class="material-symbols-outlined">chevron_right</span>
-</button>
+</a>
 </div>
 </div>
 </div>
@@ -461,4 +583,46 @@
             searchInput.parentElement.classList.remove('ring-2', 'ring-secondary/20');
         });
     </script>
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    const isOpen = sidebar.classList.contains('translate-x-0');
+    if (isOpen) {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (overlay) overlay.classList.add('hidden');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.width = '100%';
+    } else {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (overlay) overlay.classList.remove('hidden');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.width = '';
+    }
+}
+function setSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    if (window.innerWidth >= 768) {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.width = '';
+    } else {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.width = '100%';
+    }
+    if (overlay) overlay.classList.add('hidden');
+}
+setSidebarState();
+window.addEventListener('resize', setSidebarState);
+</script>
 </body></html>

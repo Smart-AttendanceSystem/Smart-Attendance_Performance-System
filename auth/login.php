@@ -1,3 +1,46 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/db.php';
+
+$error = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = trim($_POST['email'] ?? '');
+    $password = trim($_POST['password'] ?? '');
+
+    if ($email === '' || $password === '') {
+        $error = 'Please enter both email and password.';
+    } else {
+        $stmt = $conn->prepare('SELECT id, name, email, password, role, status FROM `user` WHERE email = ?');
+        $stmt->bind_param('s', $email);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $user = $result->fetch_assoc();
+
+        if ($user && password_verify($password, $user['password'])) {
+            if (strtolower($user['status'] ?? 'active') === 'inactive') {
+                $error = 'Your account has been deactivated. Contact your administrator.';
+            } else {
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['user_name'] = $user['name'];
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['user_role'] = $user['role'];
+                
+
+                $role = strtolower($user['role'] ?? '');
+                if ($role === 'admin') {
+                    header('Location: ../Admin/dashboard.php');
+                } else {
+                    header('Location: ../user/userdashboard.php');
+                }
+                exit;
+            }
+        } else {
+            $error = 'Invalid email or password.';
+        }
+    }
+}
+?>
 <!DOCTYPE html>
 
 <html class="h-full" lang="en"><head>
@@ -111,17 +154,33 @@
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
         }
         
-        .login-card {
-            backdrop-filter: blur(8px);
+            .login-card {
+            backdrop-filter: blur(12px);
             background: rgba(255, 255, 255, 0.95);
+            transition: box-shadow 0.3s ease;
+        }
+        .login-card:hover {
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
         }
 
-       
+        .brand-header {
+            background: linear-gradient(135deg, #162839 0%, #1e3347 50%, #2c3e50 100%);
+        }
 
         input:focus {
             outline: none !important;
             border-color: #006b58 !important;
-            box-shadow: 0 0 0 2px rgba(0, 107, 88, 0.1) !important;
+            box-shadow: 0 0 0 3px rgba(0, 107, 88, 0.12) !important;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #162839 0%, #1e3347 100%);
+            transition: all 0.25s ease;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #1e3347 0%, #2c3e50 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(22, 40, 57, 0.3);
         }
     </style>
 </head>
@@ -131,11 +190,15 @@
 <main class="w-full max-w-[440px] ">
 <div class="login-card shadow-md rounded-xl border border-outline-variant overflow-hidden">
 <!-- Brand Header -->
-<div class="bg-primary px-xl py-lg text-center flex flex-col items-center gap-xs">
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary tracking-tight">
+<div class="brand-header px-xl py-lg text-center flex flex-col items-center gap-xs relative overflow-hidden">
+<div class="absolute inset-0 opacity-10">
+<div class="absolute -top-1/2 -right-1/2 w-full h-full rounded-full bg-white blur-[80px]"></div>
+<div class="absolute -bottom-1/2 -left-1/2 w-full h-full rounded-full bg-secondary blur-[80px]"></div>
+</div>
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary tracking-tight relative z-10">
                         Smart Attendance
                     </h1>
-<p class="font-body-sm text-body-sm text-on-primary-fixed-variant opacity-80">
+<p class="font-body-sm text-body-sm text-on-primary-fixed-variant opacity-80 relative z-10">
                         Enterprise Human Resource Management
                     </p>
 </div>
@@ -143,14 +206,19 @@
 <div class="p-xl space-y-lg">
 <div class="space-y-base">
 <h2 class="font-headline-sm text-headline-sm text-on-surface">Welcome Back</h2>
-<p class="font-body-sm text-body-sm text-on-surface-variant">Please enter your credentials to access .</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Please enter your credentials to access your account.</p>
 </div>
-<form class="space-y-md" onsubmit="event.preventDefault();">
+<?php if (!empty($error)): ?>
+<div class="mb-md rounded-lg border border-red-200 bg-red-50 px-sm py-xs text-sm text-red-700">
+    <?php echo htmlspecialchars($error); ?>
+</div>
+<?php endif; ?>
+<form class="space-y-md" method="post" action="">
 <!-- Email Field -->
 <div class="space-y-xs">
 <label class="font-label-caps text-label-caps text-on-surface-variant uppercase" for="email">Email Address</label>
 <div class="relative group">
-<input class="w-full pl-xl pr-md py-sm bg-surface-container-lowest border border-outline-variant rounded-lg font-body-md text-on-surface placeholder:text-outline focus:ring-0 transition-all" id="email" placeholder="" required="" type="email"/>
+<input class="w-full pl-xl pr-md py-sm bg-surface-container-lowest border border-outline-variant rounded-lg font-body-md text-on-surface placeholder:text-outline focus:ring-0 transition-all" id="email" name="email" placeholder="" required="" type="email"/>
 </div>
 </div>
 <!-- Password Field -->
@@ -160,7 +228,7 @@
 <a class="font-body-sm text-body-sm text-secondary hover:underline transition-all" href="#">Forgot Password?</a>
 </div>
 <div class="relative group">
-<input class="w-full pl-xl pr-md py-sm bg-surface-container-lowest border border-outline-variant rounded-lg font-body-md text-on-surface placeholder:text-outline focus:ring-0 transition-all" id="password" placeholder="••••••••" required="" type="password"/>
+<input class="w-full pl-xl pr-md py-sm bg-surface-container-lowest border border-outline-variant rounded-lg font-body-md text-on-surface placeholder:text-outline focus:ring-0 transition-all" id="password" name="password" placeholder="••••••••" required="" type="password"/>
 <button class="absolute right-md top-1/2 -translate-y-1/2 text-outline hover:text-on-surface-variant" type="button">
 <span class="material-symbols-outlined text-[20px]">visibility</span>
 </button>
@@ -169,11 +237,11 @@
 <!-- Utilities -->
 <div class="flex items-center gap-xs">
 <input class="w-4 h-4 rounded-base border-outline text-secondary focus:ring-secondary/20" id="remember" type="checkbox"/>
-<label class="font-body-sm text-body-sm text-on-surface-variant cursor-pointer select-none" for="remember">Remember this device for 30 days</label>
+<label class="font-body-sm text-body-sm text-on-surface-variant cursor-pointer select-none" for="remember">Remember this device</label>
 </div>
 <!-- Action Button -->
 <div class="pt-md">
-<button class="w-full bg-primary text-on-primary font-headline-sm text-headline-sm py-sm rounded-lg hover:bg-primary-container transition-all active:scale-[0.98] shadow-sm flex items-center justify-center gap-xs group" type="submit">
+<button class="btn-primary w-full text-on-primary font-headline-sm text-headline-sm py-sm rounded-lg active:scale-[0.98] shadow-sm flex items-center justify-center gap-xs group" type="submit">
 <span>Sign In</span>
 <span class="material-symbols-outlined group-hover:translate-x-1 transition-transform">arrow_forward</span>
 </button>
@@ -181,6 +249,13 @@
 </form>
 </div>
 
+<!-- Register Link -->
+<div class="border-t border-outline-variant/50 px-xl py-md text-center">
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+Don't have an account?
+<a class="text-secondary font-semibold hover:underline" href="register.php">Register Now</a>
+</p>
+</div>
 
 </div>
 </div>
@@ -212,31 +287,16 @@
 <div class="absolute -bottom-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-secondary/10 blur-[120px]"></div>
 </div>
 <script>
-        // Micro-interaction: Form input shake on error (placeholder logic)
-        const form = document.querySelector('form');
-        const card = document.querySelector('.login-card');
-
-        form.addEventListener('submit', (e) => {
-            // Simulated login success
-            const btn = form.querySelector('button[type="submit"]');
-            const originalContent = btn.innerHTML;
-            
-            btn.disabled = true;
-            btn.innerHTML = `<span class="animate-spin material-symbols-outlined">progress_activity</span>`;
-            
-            setTimeout(() => {
-                // Return to normal or redirect
-                btn.innerHTML = originalContent;
-                btn.disabled = false;
-                console.log('Login attempt recorded');
-            }, 1500);
-        });
-
-        // Hover effect for the card using mouse movement disabled to keep the form fixed.
-        // document.addEventListener('mousemove', (e) => {
-        //     const x = (window.innerWidth / 2 - e.pageX) / 50;
-        //     const y = (window.innerHeight / 2 - e.pageY) / 50;
-        //     card.style.transform = `rotateY(${x}deg) rotateX(${y}deg)`;
-        // });
-    </script>
+    document.querySelector('#password + button')?.addEventListener('click', function () {
+        const input = document.getElementById('password');
+        const icon = this.querySelector('.material-symbols-outlined');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.textContent = 'visibility_off';
+        } else {
+            input.type = 'password';
+            icon.textContent = 'visibility';
+        }
+    });
+</script>
 </body></html>

@@ -1,3 +1,155 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/db.php';
+
+$role = $_SESSION['user_role'] ?? '';
+if ($role !== 'admin') {
+    header('Location: ../auth/login.php');
+    exit;
+}
+
+$adminId = (int) ($_SESSION['user_id'] ?? 0);
+$adminName = $_SESSION['user_name'] ?? 'Admin';
+$adminAvatar = $_SESSION['user_avatar'] ?? '';
+if (empty($adminAvatar) && $adminId > 0) {
+    $avQuery = $conn->prepare("SELECT ep.avatar FROM employee_profiles ep WHERE ep.user_id = ?");
+    $avQuery->bind_param('i', $adminId);
+    $avQuery->execute();
+    $avRow = $avQuery->get_result()->fetch_assoc();
+    $adminAvatar = $avRow['avatar'] ?? '';
+    if (!empty($adminAvatar)) $_SESSION['user_avatar'] = $adminAvatar;
+}
+$defaultAvatar = 'https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg';
+$adminAvatarDisplay = !empty($adminAvatar) ? htmlspecialchars($adminAvatar) : $defaultAvatar;
+
+$message = '';
+$messageType = '';
+
+if (isset($_GET['success']) && $_GET['success'] === '1') {
+    $message = 'Saved successfully.';
+    $messageType = 'text-secondary';
+}
+
+if (isset($_GET['updated']) && $_GET['updated'] === '1') {
+    $message = 'Department updated successfully.';
+    $messageType = 'text-secondary';
+}
+
+if (isset($_GET['deleted']) && $_GET['deleted'] === '1') {
+    $message = 'Department deleted successfully.';
+    $messageType = 'text-secondary';
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['save_department'])) {
+        $name = trim($_POST['name'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+
+        if ($name !== '') {
+            $checkStmt = $conn->prepare("SELECT id FROM departments WHERE LOWER(name) = LOWER(?)");
+            $checkStmt->bind_param('s', $name);
+            $checkStmt->execute();
+            if ($checkStmt->get_result()->num_rows > 0) {
+                $message = 'A department with this name already exists.';
+                $messageType = 'text-error';
+            } else {
+                $stmt = $conn->prepare("INSERT INTO departments (name, description) VALUES (?, ?)");
+                $stmt->bind_param('ss', $name, $description);
+                if ($stmt->execute()) {
+                    header('Location: department_management.php?success=1');
+                    exit;
+                }
+                $message = 'Could not save department. Please try again.';
+                $messageType = 'text-error';
+            }
+        } else {
+            $message = 'Please enter a department name.';
+            $messageType = 'text-error';
+        }
+    }
+
+    if (isset($_POST['update_department'])) {
+        $deptId = (int) ($_POST['department_id'] ?? 0);
+        $name = trim($_POST['name'] ?? '');
+        $managerName = trim($_POST['manager_name'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+
+        if ($deptId > 0 && $name !== '') {
+            $stmt = $conn->prepare("UPDATE departments SET name = ?, manager_name = ?, description = ? WHERE id = ?");
+            $stmt->bind_param('sssi', $name, $managerName, $description, $deptId);
+            if ($stmt->execute()) {
+                header('Location: department_management.php?updated=1');
+                exit;
+            }
+            $message = 'Could not update department.';
+        } else {
+            $message = 'Please enter a department name.';
+        }
+    }
+
+    if (isset($_POST['delete_department'])) {
+        $deptId = (int) ($_POST['department_id'] ?? 0);
+        if ($deptId > 0) {
+            $conn->query("UPDATE `user` SET department_id = NULL WHERE department_id = $deptId");
+            $stmt = $conn->prepare("DELETE FROM departments WHERE id = ?");
+            $stmt->bind_param('i', $deptId);
+            if ($stmt->execute()) {
+                header('Location: department_management.php?deleted=1');
+                exit;
+            }
+            $message = 'Could not delete department.';
+        }
+    }
+
+    if (isset($_POST['save_employee'])) {
+        $name = trim($_POST['name'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $departmentId = (int) ($_POST['department_id'] ?? 0);
+        $position = trim($_POST['position'] ?? '');
+
+        if ($name !== '' && $email !== '' && $departmentId > 0) {
+            $emailCheck = $conn->prepare("SELECT id FROM `user` WHERE email = ?");
+            $emailCheck->bind_param('s', $email);
+            $emailCheck->execute();
+            if ($emailCheck->get_result()->num_rows > 0) {
+                $message = 'An employee with this email already exists.';
+                $messageType = 'text-error';
+            } else {
+                $passwordHash = password_hash('123456', PASSWORD_DEFAULT);
+                $stmt = $conn->prepare("INSERT INTO `user` (department_id, name, email, password, status, role) VALUES (?, ?, ?, ?, 'Active', 'employee')");
+                $stmt->bind_param('isss', $departmentId, $name, $email, $passwordHash);
+                if ($stmt->execute()) {
+                    $userId = $stmt->insert_id;
+                    $profileStmt = $conn->prepare("INSERT INTO employee_profiles (user_id, department_id, email, position, phone, address) VALUES (?, ?, ?, ?, '', '')");
+                    $profileStmt->bind_param('iiss', $userId, $departmentId, $email, $position);
+                    if ($profileStmt->execute()) {
+                        header('Location: department_management.php?success=1');
+                        exit;
+                    }
+                    $message = 'Could not save employee profile. Please try again.';
+                    $messageType = 'text-error';
+                } else {
+                    $message = 'Could not add employee. Please try again.';
+                    $messageType = 'text-error';
+                }
+            }
+        } else {
+            $message = 'Please fill out the required fields.';
+            $messageType = 'text-error';
+        }
+    }
+}
+
+$departmentsQuery = $conn->query("SELECT d.id, d.name, d.manager_name, d.description, COUNT(u.id) AS employee_count FROM departments d LEFT JOIN `user` u ON u.department_id = d.id GROUP BY d.id ORDER BY d.name ASC");
+$departments = [];
+if ($departmentsQuery && $departmentsQuery->num_rows > 0) {
+    while ($row = $departmentsQuery->fetch_assoc()) {
+        $departments[] = $row;
+    }
+}
+
+$totalDepartments = count($departments);
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en"><head>
@@ -122,10 +274,11 @@
     </script>
 </head>
 <body class="bg-background font-body-md text-on-surface">
+<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 <!-- SideNavBar Shell -->
-<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col h-full py-lg z-50">
+<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col h-full py-lg z-50 -translate-x-full transition-transform duration-300">
 <div class="px-md mb-xl">
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary">Admin</h1>
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary"><?= htmlspecialchars($adminName) ?></h1>
 <p class="font-body-md text-body-md text-on-primary">HR Management System</p>
 </div>
 <nav class="flex-1 space-y-base overflow-y-auto custom-scrollbar">
@@ -167,26 +320,27 @@
 </div>
 </aside>
 <!-- TopNavBar Shell -->
-<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg h-16 z-40">
+<header class="fixed top-0 right-0 w-full md:w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg h-16 z-40">
 <div class="flex items-center gap-lg flex-1">
-<h2 class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-inverse-primary shrink-0">HR Admin</h2>
+<button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
+<h2 class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-inverse-primary shrink-0"><?= htmlspecialchars($adminName) ?></h2>
 <div class="relative w-full max-w-md">
 <span class="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
 <input class="w-full bg-surface-container-low border-none rounded-full py-xs pl-xl pr-md text-body-md focus:ring-2 focus:ring-secondary" placeholder="Search departments or managers..." type="text"/>
 </div>
 </div>
 <div class="flex items-center gap-md">
-<button class="bg-secondary text-on-secondary px-md py-xs rounded-lg font-label-caps text-label-caps hover:bg-secondary-container hover:text-on-secondary-container transition-all flex items-center gap-xs">
+<button class="bg-secondary text-on-secondary px-md py-xs rounded-lg font-label-caps text-label-caps hover:bg-secondary-container hover:text-on-secondary-container transition-all flex items-center gap-xs" onclick="document.getElementById('employee-modal').classList.remove('hidden')">
 <span class="material-symbols-outlined text-[18px]" data-icon="add">add</span>
                 Add Employee
             </button>
 <div class="h-8 w-8 rounded-full overflow-hidden border border-outline-variant ml-xs">
-<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" data-alt="A professional high-resolution corporate headshot of a middle-aged HR executive with a kind smile, wearing a dark navy blazer over a crisp white shirt. The background is a soft-focus modern office interior with warm wooden accents and bright morning sunlight streaming through glass partitions. The lighting is flattering and high-key, conveying a sense of leadership and institutional trust." src="https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg"/>
+<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" alt="<?= htmlspecialchars($adminName) ?>" src="<?= $adminAvatarDisplay ?>"/>
 </div>
 </div>
 </header>
 <!-- Main Content Canvas -->
-<main class="ml-[260px] pt-16 min-h-screen">
+<main class="md:ml-[260px] pt-16 min-h-screen">
 <div class="max-w-[1600px] mx-auto p-lg">
 <!-- Header & KPI Row -->
 <div class="flex justify-between items-end mb-xl">
@@ -194,23 +348,25 @@
 <h3 class="font-display-lg text-display-lg text-primary">Department Management</h3>
 <p class="font-body-md text-on-surface-variant">Monitor and manage institutional structures and leadership.</p>
 </div>
-<button class="bg-primary text-on-primary px-lg py-md rounded-lg font-headline-sm text-headline-sm font-semibold flex items-center gap-sm shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-95 transition-all">
+<button class="bg-primary text-on-primary px-lg py-md rounded-lg font-headline-sm text-headline-sm font-semibold flex items-center gap-sm shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-95 transition-all" onclick="document.getElementById('department-modal').classList.remove('hidden')">
 <span class="material-symbols-outlined" data-icon="domain_add">domain_add</span>
                     New Department
                 </button>
 </div>
+<?php if ($message !== ''): ?>
+<div class="mb-lg rounded-lg border border-outline-variant bg-surface-container-lowest p-md <?= $messageType ?>">
+<?= htmlspecialchars($message) ?>
+</div>
+<?php endif; ?>
 <!-- Dashboard Style Bento Grid / KPIs -->
 <div class="grid grid-cols-1 md:grid-cols-4 gap-lg mb-xl">
 <div class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm border-t-4 border-secondary">
 <p class="font-label-caps text-label-caps text-on-surface-variant mb-xs">TOTAL DEPARTMENTS</p>
 <div class="flex items-baseline gap-sm">
-<span class="font-display-lg text-display-lg text-primary">9</span>
+<span class="font-display-lg text-display-lg text-primary"><?= $totalDepartments ?></span>
 <span class="text-secondary font-semibold text-body-sm">Active</span>
 </div>
 </div>
-
-
-
 </div>
 <!-- Data Table Container -->
 <div class="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden">
@@ -226,350 +382,50 @@
 </tr>
 </thead>
 <tbody class="divide-y divide-outline-variant">
-<!-- Engineering Row -->
-<tr class="zebra-row hover:bg-secondary-container/10 transition-colors group cursor-pointer" onclick="openDetails('Engineering')">
+<?php if (!empty($departments)): ?>
+<?php foreach ($departments as $department): ?>
+<tr class="zebra-row hover:bg-secondary-container/10 transition-colors group cursor-pointer" onclick="openDetails('<?= htmlspecialchars($department['name'], ENT_QUOTES) ?>')">
 <td class="px-lg py-lg">
 <div class="flex items-center gap-md">
 <div class="p-xs bg-primary-container text-on-primary-container rounded-lg">
-<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+<span class="material-symbols-outlined" data-icon="domain">domain</span>
 </div>
-<span class="font-headline-sm text-headline-sm text-primary">Software Engineering</span>
+<span class="font-headline-sm text-headline-sm text-primary"><?= htmlspecialchars($department['name']) ?></span>
 </div>
 </td>
 <td class="px-lg py-lg">
 <div class="flex items-center gap-sm">
-<div class="h-8 w-8 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center font-bold text-xs">AS</div>
+<div class="h-8 w-8 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center font-bold text-xs"><?= strtoupper(substr(htmlspecialchars($department['manager_name'] ?: '—'), 0, 2)) ?></div>
 <div>
-<p class="font-body-md font-semibold text-on-surface">Alex</p>
+<p class="font-body-md font-semibold text-on-surface"><?= htmlspecialchars($department['manager_name'] ?: 'Not assigned') ?></p>
 </div>
 </div>
 </td>
 <td class="px-lg py-lg">
 <div class="flex items-center gap-xs">
-<span class="font-data-mono text-data-mono text-on-surface py-base px-sm bg-surface-container rounded-full">150</span>
-
+<span class="font-data-mono text-data-mono text-on-surface py-base px-sm bg-surface-container rounded-full"><?= (int) $department['employee_count'] ?></span>
 </div>
 </td>
 <td class="px-lg py-lg">
-<p class="font-body-sm text-on-surface-variant max-w-xs line-clamp-1">structured application of computer science principles to the entire lifecycle of a software product.</p>
+<p class="font-body-sm text-on-surface-variant max-w-xs line-clamp-1"><?= htmlspecialchars($department['description'] ?: 'No description available.') ?></p>
 </td>
 <td class="px-lg py-lg text-right">
 <div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-xs hover:bg-surface-container-high rounded transition-colors text-on-surface-variant" title="Edit">
+<button class="p-xs hover:bg-surface-container-high rounded transition-colors text-on-surface-variant" title="Edit" onclick="event.stopPropagation();openEditModal(this)" data-id="<?= (int) $department['id'] ?>" data-name="<?= htmlspecialchars($department['name'], ENT_QUOTES) ?>" data-manager="<?= htmlspecialchars($department['manager_name'] ?? '', ENT_QUOTES) ?>" data-description="<?= htmlspecialchars($department['description'] ?? '', ENT_QUOTES) ?>">
 <span class="material-symbols-outlined" data-icon="edit">edit</span>
 </button>
-<button class="p-xs hover:bg-error-container hover:text-error rounded transition-colors text-on-surface-variant" title="Delete">
+<button class="p-xs hover:bg-error-container hover:text-error rounded transition-colors text-on-surface-variant" title="Delete" onclick="event.stopPropagation();openDeleteModal(this)" data-id="<?= (int) $department['id'] ?>" data-name="<?= htmlspecialchars($department['name'], ENT_QUOTES) ?>">
 <span class="material-symbols-outlined" data-icon="delete">delete</span>
 </button>
 </div>
 </td>
 </tr>
-<!-- Sales Row -->
-<tr class="zebra-row hover:bg-secondary-container/10 transition-colors group cursor-pointer" onclick="openDetails('Sales')">
-<td class="px-lg py-lg">
-<div class="flex items-center gap-md">
-<div class="p-xs bg-secondary-container text-on-secondary-container rounded-lg">
-<span class="material-symbols-outlined" data-icon="diversity_3">diversity_4</span>
-</div>
-<span class="font-headline-sm text-headline-sm text-primary">Cyber Security</span>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-sm">
-<div class="h-8 w-8 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-bold text-xs">RM</div>
-<div>
-<p class="font-body-md font-semibold text-on-surface">Rachel</p>
-</div>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-xs">
-<span class="font-data-mono text-data-mono text-on-surface py-base px-sm bg-surface-container rounded-full">70</span>
-
-</div>
-</td>
-<td class="px-lg py-lg">
-<p class="font-body-sm text-on-surface-variant max-w-xs line-clamp-1">specialized unit dedicated to defending an organization’s digital ecosystem.</p>
-</td>
-<td class="px-lg py-lg text-right">
-<div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-xs hover:bg-surface-container-high rounded transition-colors text-on-surface-variant" title="Edit">
-<span class="material-symbols-outlined" data-icon="edit">edit</span>
-</button>
-<button class="p-xs hover:bg-error-container hover:text-error rounded transition-colors text-on-surface-variant" title="Delete">
-<span class="material-symbols-outlined" data-icon="delete">delete</span>
-</button>
-</div>
-</td>
+<?php endforeach; ?>
+<?php else: ?>
+<tr>
+<td class="px-lg py-md" colspan="5">No departments found yet.</td>
 </tr>
-<!-- Human Resources Row -->
-<tr class="zebra-row hover:bg-secondary-container/10 transition-colors group cursor-pointer" onclick="openDetails('HR')">
-<td class="px-lg py-lg">
-<div class="flex items-center gap-md">
-<div class="p-xs bg-tertiary-container text-on-tertiary-container rounded-lg">
-<span class="material-symbols-outlined" data-icon="diversity_3">diversity_3</span>
-</div>
-<span class="font-headline-sm text-headline-sm text-primary">Infrastructure & Cloud Operations</span>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-sm">
-<div class="h-8 w-8 rounded-full bg-tertiary-fixed-dim text-on-tertiary-fixed flex items-center justify-center font-bold text-xs">JH</div>
-<div>
-<p class="font-body-md font-semibold text-on-surface">July</p>
-</div>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-xs">
-<span class="font-data-mono text-data-mono text-on-surface py-base px-sm bg-surface-container rounded-full">110</span>
-
-</div>
-</td>
-<td class="px-lg py-lg">
-<p class="font-body-sm text-on-surface-variant max-w-xs line-clamp-1">to building, maintaining, and scaling the technology foundations of an enterprise. </p>
-</td>
-<td class="px-lg py-lg text-right">
-<div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-xs hover:bg-surface-container-high rounded transition-colors text-on-surface-variant" title="Edit">
-<span class="material-symbols-outlined" data-icon="edit">edit</span>
-</button>
-<button class="p-xs hover:bg-error-container hover:text-error rounded transition-colors text-on-surface-variant" title="Delete">
-<span class="material-symbols-outlined" data-icon="delete">delete</span>
-</button>
-</div>
-</td>
-</tr>
-<!-- Operations Row -->
-<tr class="zebra-row hover:bg-secondary-container/10 transition-colors group cursor-pointer" onclick="openDetails('Operations')">
-<td class="px-lg py-lg">
-<div class="flex items-center gap-md">
-<div class="p-xs bg-surface-container-highest text-primary rounded-lg">
-<span class="material-symbols-outlined" data-icon="build_circle">build_circle</span>
-</div>
-<span class="font-headline-sm text-headline-sm text-primary">Data Science & Analytics</span>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-sm">
-<div class="h-8 w-8 rounded-full bg-outline-variant text-primary flex items-center justify-center font-bold text-xs">DW</div>
-<div>
-<p class="font-body-md font-semibold text-on-surface">David</p>
-</div>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-xs">
-<span class="font-data-mono text-data-mono text-on-surface py-base px-sm bg-surface-container rounded-full">82</span>
-
-</div>
-</td>
-<td class="px-lg py-lg">
-<p class="font-body-sm text-on-surface-variant max-w-xs line-clamp-1"> engineering robust data pipelines, running statistical modeling, and building business intelligence infrastructure.</p>
-</td>
-<td class="px-lg py-lg text-right">
-<div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-xs hover:bg-surface-container-high rounded transition-colors text-on-surface-variant" title="Edit">
-<span class="material-symbols-outlined" data-icon="edit">edit</span>
-</button>
-<button class="p-xs hover:bg-error-container hover:text-error rounded transition-colors text-on-surface-variant" title="Delete">
-<span class="material-symbols-outlined" data-icon="delete">delete</span>
-</button>
-</div>
-</td>
-</tr>
-
-<tr class="zebra-row hover:bg-secondary-container/10 transition-colors group cursor-pointer" onclick="openDetails('Sales')">
-<td class="px-lg py-lg">
-<div class="flex items-center gap-md">
-<div class="p-xs bg-secondary-container text-on-secondary-container rounded-lg">
-<span class="material-symbols-outlined" data-icon="fact_check">fact_check</span>
-</div>
-<span class="font-headline-sm text-headline-sm text-primary">Quality Assurance & Testing</span>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-sm">
-<div class="h-8 w-8 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-bold text-xs">RM</div>
-<div>
-<p class="font-body-md font-semibold text-on-surface">Smart</p>
-</div>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-xs">
-<span class="font-data-mono text-data-mono text-on-surface py-base px-sm bg-surface-container rounded-full">160</span>
-
-</div>
-</td>
-<td class="px-lg py-lg">
-<p class="font-body-sm text-on-surface-variant max-w-xs line-clamp-1">establishing product quality gates, managing test automation frameworks, and executing rigorous validation protocols.</p>
-</td>
-<td class="px-lg py-lg text-right">
-<div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-xs hover:bg-surface-container-high rounded transition-colors text-on-surface-variant" title="Edit">
-<span class="material-symbols-outlined" data-icon="edit">edit</span>
-</button>
-<button class="p-xs hover:bg-error-container hover:text-error rounded transition-colors text-on-surface-variant" title="Delete">
-<span class="material-symbols-outlined" data-icon="delete">delete</span>
-</button>
-</div>
-</td>
-</tr>
-
-<tr class="zebra-row hover:bg-secondary-container/10 transition-colors group cursor-pointer" onclick="openDetails('Sales')">
-<td class="px-lg py-lg">
-<div class="flex items-center gap-md">
-<div class="p-xs bg-secondary-container text-on-secondary-container rounded-lg">
-<span class="material-symbols-outlined" data-icon="payments">payments</span>
-</div>
-<span class="font-headline-sm text-headline-sm text-primary">Finance & Procurement</span>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-sm">
-<div class="h-8 w-8 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-bold text-xs">RM</div>
-<div>
-<p class="font-body-md font-semibold text-on-surface">May</p>
-</div>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-xs">
-<span class="font-data-mono text-data-mono text-on-surface py-base px-sm bg-surface-container rounded-full">80</span>
-
-</div>
-</td>
-<td class="px-lg py-lg">
-<p class="font-body-sm text-on-surface-variant max-w-xs line-clamp-1">core operational unit responsible for corporate asset allocation, budget governance, capital management, and technical supply-chain sourcing. .</p>
-</td>
-<td class="px-lg py-lg text-right">
-<div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-xs hover:bg-surface-container-high rounded transition-colors text-on-surface-variant" title="Edit">
-<span class="material-symbols-outlined" data-icon="edit">edit</span>
-</button>
-<button class="p-xs hover:bg-error-container hover:text-error rounded transition-colors text-on-surface-variant" title="Delete">
-<span class="material-symbols-outlined" data-icon="delete">delete</span>
-</button>
-</div>
-</td>
-</tr>
-
-<tr class="zebra-row hover:bg-secondary-container/10 transition-colors group cursor-pointer" onclick="openDetails('Sales')">
-<td class="px-lg py-lg">
-<div class="flex items-center gap-md">
-<div class="p-xs bg-secondary-container text-on-secondary-container rounded-lg">
-<span class="material-symbols-outlined" data-icon="fact_check">fact_check</span>
-</div>
-<span class="font-headline-sm text-headline-sm text-primary">Human Resources</span>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-sm">
-<div class="h-8 w-8 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-bold text-xs">RM</div>
-<div>
-<p class="font-body-md font-semibold text-on-surface">Aung Aung</p>
-</div>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-xs">
-<span class="font-data-mono text-data-mono text-on-surface py-base px-sm bg-surface-container rounded-full">90</span>
-
-</div>
-</td>
-<td class="px-lg py-lg">
-<p class="font-body-sm text-on-surface-variant max-w-xs line-clamp-1">responsible for the systematic verification, validation, and quality governance of all software applications and digital products. </p>
-</td>
-<td class="px-lg py-lg text-right">
-<div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-xs hover:bg-surface-container-high rounded transition-colors text-on-surface-variant" title="Edit">
-<span class="material-symbols-outlined" data-icon="edit">edit</span>
-</button>
-<button class="p-xs hover:bg-error-container hover:text-error rounded transition-colors text-on-surface-variant" title="Delete">
-<span class="material-symbols-outlined" data-icon="delete">delete</span>
-</button>
-</div>
-</td>
-</tr></div>
-
-<tr class="zebra-row hover:bg-secondary-container/10 transition-colors group cursor-pointer" onclick="openDetails('Sales')">
-<td class="px-lg py-lg">
-<div class="flex items-center gap-md">
-<div class="p-xs bg-secondary-container text-on-secondary-container rounded-lg">
-<span class="material-symbols-outlined" data-icon="support_agent">support_agent</span>
-</div>
-<span class="font-headline-sm text-headline-sm text-primary">Technical Support & Helpdesk</span>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-sm">
-<div class="h-8 w-8 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-bold text-xs">RM</div>
-<div>
-<p class="font-body-md font-semibold text-on-surface">John</p>
-</div>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-xs">
-<span class="font-data-mono text-data-mono text-on-surface py-base px-sm bg-surface-container rounded-full">108</span>
-
-</div>
-</td>
-<td class="px-lg py-lg">
-<p class="font-body-sm text-on-surface-variant max-w-xs line-clamp-1">The primary point of contact for resolving user hardware, software, and connectivity issues. </p>
-</td>
-<td class="px-lg py-lg text-right">
-<div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-xs hover:bg-surface-container-high rounded transition-colors text-on-surface-variant" title="Edit">
-<span class="material-symbols-outlined" data-icon="edit">edit</span>
-</button>
-<button class="p-xs hover:bg-error-container hover:text-error rounded transition-colors text-on-surface-variant" title="Delete">
-<span class="material-symbols-outlined" data-icon="delete">delete</span>
-</button>
-</div>
-</td>
-</tr>
-</div>
-
-<tr class="zebra-row hover:bg-secondary-container/10 transition-colors group cursor-pointer" onclick="openDetails('Sales')">
-<td class="px-lg py-lg">
-<div class="flex items-center gap-md">
-<div class="p-xs bg-secondary-container text-on-secondary-container rounded-lg">
-<span class="material-symbols-outlined" data-icon="design_services">design_services</span>
-</div>
-<span class="font-headline-sm text-headline-sm text-primary">Product & UI/UX Design</span>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-sm">
-<div class="h-8 w-8 rounded-full bg-primary-fixed text-on-primary-fixed flex items-center justify-center font-bold text-xs">RM</div>
-<div>
-<p class="font-body-md font-semibold text-on-surface">Liam</p>
-</div>
-</div>
-</td>
-<td class="px-lg py-lg">
-<div class="flex items-center gap-xs">
-<span class="font-data-mono text-data-mono text-on-surface py-base px-sm bg-surface-container rounded-full">150</span>
-
-</div>
-</td>
-<td class="px-lg py-lg">
-<p class="font-body-sm text-on-surface-variant max-w-xs line-clamp-1"> Responsible for the strategic vision, visual architecture, and user experience of the enterprise digital products. </p>
-</td>
-<td class="px-lg py-lg text-right">
-<div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-xs hover:bg-surface-container-high rounded transition-colors text-on-surface-variant" title="Edit">
-<span class="material-symbols-outlined" data-icon="edit">edit</span>
-</button>
-<button class="p-xs hover:bg-error-container hover:text-error rounded transition-colors text-on-surface-variant" title="Delete">
-<span class="material-symbols-outlined" data-icon="delete">delete</span>
-</button>
-</div>
-</td>
-</tr></div>
-
+<?php endif; ?>
 </tbody>
 </table>
 </div>
@@ -643,5 +499,220 @@
 </div>
 </div>
 </div>
+<!-- Department Modal -->
+<div class="hidden fixed inset-0 bg-primary/40 backdrop-blur-sm z-[100] flex items-center justify-center p-md" id="department-modal">
+<div class="bg-surface-container-lowest w-full max-w-xl rounded-xl shadow-xl overflow-hidden">
+<div class="bg-primary p-lg text-on-primary flex justify-between items-center">
+<div>
+<h3 class="font-headline-sm text-headline-sm">New Department</h3>
+<p class="text-on-primary-container text-body-sm">Create a department record in the database</p>
+</div>
+<button class="hover:bg-primary-container p-2 rounded-full transition-colors" type="button" onclick="document.getElementById('department-modal').classList.add('hidden')">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<form class="p-lg space-y-lg" method="post" action="department_management.php">
+<input type="hidden" name="save_department" value="1" />
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Department Name</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="name" required type="text" />
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Description</label>
+<textarea class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="description" rows="4"></textarea>
+</div>
+<div class="flex justify-end gap-md pt-md">
+<button class="px-lg py-2 rounded-lg text-primary hover:bg-surface-container-high transition-colors font-label-caps text-label-caps" type="button" onclick="document.getElementById('department-modal').classList.add('hidden')">Cancel</button>
+<button class="bg-secondary text-on-secondary px-xl py-2 rounded-lg hover:opacity-90 transition-opacity font-label-caps text-label-caps" type="submit">Save Department</button>
+</div>
+</form>
+</div>
+</div>
+<!-- Edit Department Modal -->
+<div class="hidden fixed inset-0 bg-primary/40 backdrop-blur-sm z-[100] flex items-center justify-center p-md" id="edit-department-modal">
+<div class="bg-surface-container-lowest w-full max-w-xl rounded-xl shadow-xl overflow-hidden">
+<div class="bg-primary p-lg text-on-primary flex justify-between items-center">
+<div>
+<h3 class="font-headline-sm text-headline-sm">Edit Department</h3>
+<p class="text-on-primary-container text-body-sm">Update department information</p>
+</div>
+<button class="hover:bg-primary-container p-2 rounded-full transition-colors" type="button" onclick="closeEditModal()">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<form class="p-lg space-y-lg" method="post" action="department_management.php">
+<input type="hidden" name="update_department" value="1" />
+<input type="hidden" name="department_id" id="edit-department-id" value="" />
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Department Name</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="name" id="edit-department-name" required type="text" />
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Manager Name</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="manager_name" id="edit-department-manager" type="text" />
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Description</label>
+<textarea class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="description" id="edit-department-description" rows="4"></textarea>
+</div>
+<div class="flex justify-end gap-md pt-md">
+<button class="px-lg py-2 rounded-lg text-primary hover:bg-surface-container-high transition-colors font-label-caps text-label-caps" type="button" onclick="closeEditModal()">Cancel</button>
+<button class="bg-secondary text-on-secondary px-xl py-2 rounded-lg hover:opacity-90 transition-opacity font-label-caps text-label-caps" type="submit">Update Department</button>
+</div>
+</form>
+</div>
+</div>
+<!-- Delete Confirmation Modal -->
+<div class="hidden fixed inset-0 bg-primary/40 backdrop-blur-sm z-[100] flex items-center justify-center p-md" id="delete-department-modal">
+<div class="bg-surface-container-lowest w-full max-w-md rounded-xl shadow-xl overflow-hidden">
+<div class="bg-error-container p-lg text-error flex justify-between items-center">
+<div>
+<h3 class="font-headline-sm text-headline-sm">Delete Department</h3>
+<p class="text-on-error-container text-body-sm">This action cannot be undone.</p>
+</div>
+<button class="hover:bg-error-container p-2 rounded-full transition-colors" type="button" onclick="closeDeleteModal()">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<form class="p-lg space-y-lg" method="post" action="department_management.php">
+<input type="hidden" name="delete_department" value="1" />
+<input type="hidden" name="department_id" id="delete-department-id" value="" />
+<div class="space-y-base">
+<p class="font-body-md text-on-surface">Are you sure you want to delete <strong id="delete-department-name"></strong>?</p>
+<p class="font-body-sm text-on-surface-variant">Employees in this department will be unassigned.</p>
+</div>
+<div class="flex justify-end gap-md pt-md">
+<button class="px-lg py-2 rounded-lg text-primary hover:bg-surface-container-high transition-colors font-label-caps text-label-caps" type="button" onclick="closeDeleteModal()">Cancel</button>
+<button class="bg-error text-on-error px-xl py-2 rounded-lg hover:opacity-90 transition-opacity font-label-caps text-label-caps" type="submit">Delete</button>
+</div>
+</form>
+</div>
+</div>
+<!-- Employee Modal -->
+<div class="hidden fixed inset-0 bg-primary/40 backdrop-blur-sm z-[100] flex items-center justify-center p-md" id="employee-modal">
+<div class="bg-surface-container-lowest w-full max-w-2xl rounded-xl shadow-xl overflow-hidden">
+<div class="bg-primary p-lg text-on-primary flex justify-between items-center">
+<div>
+<h3 class="font-headline-sm text-headline-sm">Add New Employee</h3>
+<p class="text-on-primary-container text-body-sm">Create a new employee record in the database</p>
+</div>
+<button class="hover:bg-primary-container p-2 rounded-full transition-colors" type="button" onclick="document.getElementById('employee-modal').classList.add('hidden')">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<form class="p-lg grid grid-cols-1 md:grid-cols-2 gap-lg" method="post" action="department_management.php">
+<input type="hidden" name="save_employee" value="1" />
+<div class="space-y-base col-span-2 md:col-span-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Full Name</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="name" required type="text" />
+</div>
+<div class="space-y-base col-span-2 md:col-span-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Email Address</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="email" required type="email" />
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Department</label>
+<select class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="department_id" required>
+<?php foreach ($departments as $department): ?>
+<option value="<?= (int) $department['id'] ?>"><?= htmlspecialchars($department['name']) ?></option>
+<?php endforeach; ?>
+</select>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Position</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="position" placeholder="e.g. Lead Developer" type="text" />
+</div>
+<div class="col-span-2 flex justify-end gap-md pt-md">
+<button class="px-lg py-2 rounded-lg text-primary hover:bg-surface-container-high transition-colors font-label-caps text-label-caps" type="button" onclick="document.getElementById('employee-modal').classList.add('hidden')">Cancel</button>
+<button class="bg-secondary text-on-secondary px-xl py-2 rounded-lg hover:opacity-90 transition-opacity font-label-caps text-label-caps" type="submit">Save Employee</button>
+</div>
+</form>
+</div>
+</div>
+<script>
+        const searchInput = document.querySelector('input[type="text"]');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                const rows = document.querySelectorAll('.zebra-row');
+                rows.forEach(row => {
+                    const text = row.innerText.toLowerCase();
+                    row.style.display = text.includes(term) ? '' : 'none';
+                });
+            });
+        }
 
+        function openEditModal(btn) {
+            document.getElementById('edit-department-id').value = btn.dataset.id;
+            document.getElementById('edit-department-name').value = btn.dataset.name;
+            document.getElementById('edit-department-manager').value = btn.dataset.manager;
+            document.getElementById('edit-department-description').value = btn.dataset.description;
+            document.getElementById('edit-department-modal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-department-modal').classList.add('hidden');
+        }
+
+        function openDeleteModal(btn) {
+            document.getElementById('delete-department-id').value = btn.dataset.id;
+            document.getElementById('delete-department-name').textContent = btn.dataset.name;
+            document.getElementById('delete-department-modal').classList.remove('hidden');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('delete-department-modal').classList.add('hidden');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.getElementById('department-modal')?.classList.add('hidden');
+                document.getElementById('edit-department-modal')?.classList.add('hidden');
+                document.getElementById('delete-department-modal')?.classList.add('hidden');
+                document.getElementById('employee-modal')?.classList.add('hidden');
+            }
+        });
+    </script>
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    const isOpen = sidebar.classList.contains('translate-x-0');
+    if (isOpen) {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (overlay) overlay.classList.add('hidden');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.width = '100%';
+    } else {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (overlay) overlay.classList.remove('hidden');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.width = '';
+    }
+}
+function setSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    if (window.innerWidth >= 768) {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.width = '';
+    } else {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.width = '100%';
+    }
+    if (overlay) overlay.classList.add('hidden');
+}
+setSidebarState();
+window.addEventListener('resize', setSidebarState);
+</script>
 </body></html>

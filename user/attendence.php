@@ -1,3 +1,80 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/db.php';
+
+$userId = (int) ($_SESSION['user_id'] ?? 0);
+$userName = $_SESSION['user_name'] ?? 'User';
+$userRole = $_SESSION['user_role'] ?? '';
+
+if ($userId <= 0) {
+    header('Location: ../auth/login.php');
+    exit;
+}
+
+$currentMonth = date('m');
+$currentYear = date('Y');
+$today = date('Y-m-d');
+$todayDay = (int) date('j');
+$monthName = date('F Y');
+$employeeId = 'YGN-' . str_pad($userId, 4, '0', STR_PAD_LEFT);
+
+$employeeInfo = $conn->query("SELECT u.name, ep.position, ep.avatar FROM `user` u LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.id = $userId");
+$empData = $employeeInfo ? $employeeInfo->fetch_assoc() : null;
+$empName = $empData['name'] ?? $userName;
+$empPosition = $empData['position'] ?? 'Employee';
+$empAvatar = $empData['avatar'] ?? '';
+
+// Today's attendance
+$todayAttendance = null;
+$todayAttRes = $conn->query("SELECT check_in, check_out, status, TIMESTAMPDIFF(MINUTE, check_in, check_out) AS minutes_worked FROM attendance WHERE user_id = $userId AND date = '$today' LIMIT 1");
+if ($todayAttRes && $todayAttRes->num_rows > 0) {
+    $todayAttendance = $todayAttRes->fetch_assoc();
+}
+
+// Monthly summary counts
+$presentCount = 0; $absentCount = 0; $lateCount = 0; $halfDayCount = 0;
+$summaryRes = $conn->query("SELECT status, COUNT(*) AS cnt FROM attendance WHERE user_id = $userId AND MONTH(date) = $currentMonth AND YEAR(date) = $currentYear GROUP BY LOWER(status)");
+if ($summaryRes && $summaryRes->num_rows > 0) {
+    while ($row = $summaryRes->fetch_assoc()) {
+        $s = strtolower($row['status']);
+        $c = (int) $row['cnt'];
+        if ($s === 'present') $presentCount = $c;
+        elseif ($s === 'late') $lateCount = $c;
+        elseif ($s === 'absent') $absentCount = $c;
+        elseif ($s === 'half day' || $s === 'half-day') $halfDayCount = $c;
+    }
+}
+
+// Calendar records: day => status
+$calendarRecords = [];
+$calRes = $conn->query("SELECT DAY(date) AS day, status, check_in, check_out FROM attendance WHERE user_id = $userId AND MONTH(date) = $currentMonth AND YEAR(date) = $currentYear");
+if ($calRes && $calRes->num_rows > 0) {
+    while ($row = $calRes->fetch_assoc()) {
+        $calendarRecords[(int) $row['day']] = $row;
+    }
+}
+
+// Attendance history (last 30 days)
+$historyRows = [];
+$histRes = $conn->query("SELECT date, check_in, check_out, status, TIMESTAMPDIFF(MINUTE, check_in, check_out) AS minutes_worked FROM attendance WHERE user_id = $userId ORDER BY date DESC LIMIT 30");
+if ($histRes && $histRes->num_rows > 0) {
+    while ($row = $histRes->fetch_assoc()) {
+        $historyRows[] = $row;
+    }
+}
+
+function formatHours($mins) {
+    if ($mins === null || $mins <= 0) return '00h 00m';
+    $h = intdiv($mins, 60);
+    $m = $mins % 60;
+    return sprintf('%02dh %02dm', $h, $m);
+}
+
+function formatTime($t) {
+    if (!$t || $t === '00:00:00') return '--:-- --';
+    return date('h:i A', strtotime($t));
+}
+?>
 <!DOCTYPE html>
 
 <html lang="en"><head>
@@ -6,6 +83,7 @@
 <title>Attendance - Smart Attendance System</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet"/>
 <script id="tailwind-config">
       tailwind.config = {
         darkMode: "class",
@@ -105,11 +183,37 @@
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
         .chart-bar { transition: height 1s ease-in-out; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .timer-circle {
+            width: 160px; height: 160px; border-radius: 50%;
+            background: conic-gradient(#2563eb 0deg, #e2e8f0 0deg);
+            display: flex; align-items: center; justify-content: center;
+            position: relative; flex-shrink: 0;
+        }
+        .timer-circle::before {
+            content: ''; position: absolute; inset: 6px;
+            border-radius: 50%; background: white;
+        }
+        .timer-circle .inner {
+            position: relative; z-index: 1; text-align: center;
+        }
+        .timer-circle .time {
+            font-size: 28px; font-weight: 900; color: #1e293b;
+            font-family: 'JetBrains Mono', monospace; letter-spacing: 0.5px;
+        }
+        .timer-circle .seconds {
+            font-size: 14px; font-weight: 600; color: #64748b;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .timer-circle .label {
+            font-size: 10px; color: #94a3b8; font-weight: 600;
+            letter-spacing: 0.12em; text-transform: uppercase; margin-top: 2px;
+        }
     </style>
 </head>
 <body class="text-on-surface bg-background">
+<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 <!-- Predicted SideNavBar Component -->
-<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide">
+<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide -translate-x-full transition-transform duration-300">
 <div class="px-md mb-xl">
 
 <h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Smart Attendence</h1>
@@ -151,16 +255,16 @@
 </aside>
 <!-- END: Sidebar -->
 <!-- BEGIN: MainContent -->
-<main class="flex-1 ml-64 flex flex-col min-h-screen">
+<main class="flex-1 md:ml-64 flex flex-col min-h-screen">
 <!-- BEGIN: Header -->
 <header class="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10" data-purpose="header">
 <div class="flex items-center gap-4">
-<button class="text-gray-500 hover:text-gray-700">
+<button onclick="toggleSidebar()" class="text-gray-500 hover:text-gray-700">
 <i class="fa-solid fa-bars text-xl"></i>
 </button>
 <div>
-<h1 class="font-bold text-lg text-slate-800">Welcome back, Kay 👋</h1>
-<p class="text-sm text-gray-500">Employee ID :YGN-0005</p>
+<h1 class="font-bold text-lg text-slate-800">Welcome back, <?= htmlspecialchars(explode(' ', $empName)[0]) ?> 👋</h1>
+<p class="text-sm text-gray-500">Employee ID : <?= htmlspecialchars($employeeId) ?></p>
 </div>
 </div>
 <div class="flex items-center gap-6">
@@ -169,9 +273,9 @@
 </div>
 <div class="flex items-center gap-3 pl-4 border-l border-gray-200">
 <div class="text-right">
-<img src="" alt="">
-<p class="text-sm font-semibold text-slate-800">Kay Ko</p>
-<p class="text-xs text-gray-500">Employee</p>
+<img src="<?= $empAvatar ? '../uploads/avatars/' . htmlspecialchars($empAvatar) : 'https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg' ?>" class="w-8 h-8 rounded-full object-cover" alt="">
+<p class="text-sm font-semibold text-slate-800"><?= htmlspecialchars($empName) ?></p>
+<p class="text-xs text-gray-500"><?= htmlspecialchars($empPosition) ?></p>
 </div>
 <i class="fa-solid fa-chevron-down text-xs text-gray-400 ml-1"></i>
 </div>
@@ -183,13 +287,13 @@
 <!-- Breadcrumb and Title -->
 <div class="flex justify-between items-end">
 <div>
-<h2 class="text-2xl font-bold text-slate-800">Attendance</h2>
+<h2 class="text-2xl font-bold text-slate-800">Attendence</h2>
 <nav class="text-sm text-gray-400 mt-1">
 </nav>
 </div>
 <div class="flex items-center bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm cursor-pointer hover:bg-gray-50 transition-colors">
 <i class="fa-regular fa-calendar-days text-blue-600 mr-3"></i>
-<span class="text-sm font-medium text-slate-700">20 June 202-, -</span>
+<span class="text-sm font-medium text-slate-700"><?= date('j F Y') ?>, <?= date('l') ?></span>
 <i class="fa-solid fa-chevron-down text-xs text-gray-400 ml-3"></i>
 </div>
 </div>
@@ -199,14 +303,34 @@
 <div class="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
 <div class="p-6 flex items-center justify-between">
 <h3 class="font-bold text-slate-800">Today's Attendance</h3>
-<span class="bg-green-100 text-green-600 text-xs font-bold px-3 py-1 rounded-md">Present</span>
+<?php
+$attStatus = strtolower($todayAttendance['status'] ?? 'absent');
+$statusBadgeClass = match($attStatus) {
+    'present' => 'bg-green-100 text-green-600',
+    'late' => 'bg-orange-100 text-orange-600',
+    'absent' => 'bg-red-100 text-red-500',
+    default => 'bg-slate-100 text-slate-500',
+};
+$statusLabel = $todayAttendance['status'] ?? 'Not Marked';
+$checkIn = $todayAttendance['check_in'] ?? null;
+$checkOut = $todayAttendance['check_out'] ?? null;
+$hasCheckIn = $checkIn && $checkIn !== '00:00:00';
+$hasCheckOut = $checkOut && $checkOut !== '00:00:00';
+$minutesWorked = (int) ($todayAttendance['minutes_worked'] ?? 0);
+// Overtime this month
+$otThisMonth = 0;
+$otRes = $conn->query("SELECT COALESCE(SUM(hours), 0) AS total_ot FROM overtime WHERE employee_id = $userId AND MONTH(ot_date) = $currentMonth AND YEAR(ot_date) = $currentYear");
+if ($otRes) $otThisMonth = (float) $otRes->fetch_assoc()['total_ot'];
+?>
+<span class="<?= $statusBadgeClass ?> text-xs font-bold px-3 py-1 rounded-md"><?= htmlspecialchars(ucfirst($statusLabel)) ?></span>
 </div>
 <div class="px-6 pb-6 flex flex-col items-center">
 <!-- Timer Visualization -->
 <div class="timer-circle mb-6">
-<div class="z-10 text-center">
-<p class="text-2xl font-black text-slate-800">09:00 AM</p>
-<p class="text-[10px] text-gray-400 font-medium tracking-widest uppercase">Current Time</p>
+<div class="inner">
+<p class="time" id="liveClock"><?= date('h:i A') ?></p>
+<p class="seconds" id="liveSeconds"><?= date('s') ?></p>
+<p class="label">Current Time</p>
 </div>
 </div>
 <!-- Check-in Info -->
@@ -218,45 +342,58 @@
 </div>
 <div>
 <p class="text-xs text-gray-400">Check-In</p>
-<p class="text-sm font-bold text-slate-800">09:00 AM</p>
+<p class="text-sm font-bold text-slate-800"><?= htmlspecialchars(formatTime($checkIn)) ?></p>
 </div>
 </div>
-<p class="text-xs text-slate-400 font-medium">20 June 202-</p>
+<p class="text-xs text-slate-400 font-medium"><?= date('j F Y') ?></p>
 </div>
-<div class="flex items-center justify-between opacity-70">
+<div class="flex items-center justify-between <?= $hasCheckOut ? '' : 'opacity-70' ?>">
 <div class="flex items-center gap-3">
 <div class="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center text-orange-400">
 <i class="fa-solid fa-calendar-minus text-lg"></i>
 </div>
 <div>
 <p class="text-xs text-gray-400">Check-Out</p>
-<p class="text-sm font-bold text-slate-800">--:-- --</p>
+<p class="text-sm font-bold text-slate-800"><?= htmlspecialchars(formatTime($checkOut)) ?></p>
 </div>
 </div>
-<p class="text-xs text-slate-400 font-medium italic">Not Checked Out</p>
+<p class="text-xs text-slate-400 font-medium italic"><?= $hasCheckOut ? 'Completed' : 'Not Checked Out' ?></p>
 </div>
 </div>
 <!-- Actions -->
-<div class="flex gap-4 w-full">
-<button class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl shadow-md shadow-green-200 transition-all flex items-center justify-center gap-2">
+<div class="flex gap-4 w-full" id="actionButtons">
+<?php if (!$hasCheckIn): ?>
+<button onclick="handleCheckIn()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md shadow-blue-200 transition-all flex items-center justify-center gap-2">
+<i class="fa-solid fa-right-to-bracket"></i>
+                  Check In
+                </button>
+<?php elseif (!$hasCheckOut): ?>
+<button onclick="handleCheckOut()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl shadow-md shadow-green-200 transition-all flex items-center justify-center gap-2">
 <i class="fa-solid fa-right-from-bracket"></i>
                   Check Out
                 </button>
-<button class="flex-1 bg-white border border-gray-200 hover:bg-gray-50 text-slate-700 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
-<i class="fa-solid fa-mug-hot"></i>
-                  Break
+<?php else: ?>
+<button disabled class="flex-1 bg-gray-300 text-gray-500 font-bold py-3 rounded-xl flex items-center justify-center gap-2 cursor-not-allowed">
+<i class="fa-solid fa-check-circle"></i>
+                  Completed
                 </button>
+<?php endif; ?>
 </div>
 </div>
 <div class="mt-auto p-4 border-t border-gray-50 bg-gray-50/50 rounded-b-2xl flex justify-between px-6">
 <span class="text-sm text-slate-500 font-medium">Working Hours</span>
-<span class="text-sm text-slate-800 font-bold">00h 05m</span>
+<span class="text-sm text-slate-800 font-bold"><?= formatHours($minutesWorked) ?></span>
 </div>
+<?php if ($otThisMonth > 0): ?>
+<div class="px-6 pb-4 -mt-2">
+<span class="text-xs text-orange-600 font-semibold">Overtime this month: <?= number_format($otThisMonth, 1) ?> hrs</span>
+</div>
+<?php endif; ?>
 </div>
 <!-- Attendance Summary Calendar Card -->
 <div class="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
 <div class="p-6">
-<h3 class="font-bold text-slate-800">Attendance Summary <span class="text-gray-400 font-normal">(This Month)</span></h3>
+<h3 class="font-bold text-slate-800">Attendance Summary <span class="text-gray-400 font-normal">(<?= $monthName ?>)</span></h3>
 </div>
 <div class="px-6">
 <!-- Summary Grid -->
@@ -266,7 +403,7 @@
 <div class="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-2">
 <i class="fa-regular fa-calendar-check"></i>
 </div>
-<p class="text-2xl font-black text-slate-800">20</p>
+<p class="text-2xl font-black text-slate-800"><?= $presentCount ?></p>
 <p class="text-xs text-green-600 font-bold uppercase">Present</p>
 </div>
 <!-- Absent -->
@@ -274,7 +411,7 @@
 <div class="w-10 h-10 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-2">
 <i class="fa-regular fa-calendar-xmark"></i>
 </div>
-<p class="text-2xl font-black text-slate-800">1</p>
+<p class="text-2xl font-black text-slate-800"><?= $absentCount ?></p>
 <p class="text-xs text-red-500 font-bold uppercase">Absent</p>
 </div>
 <!-- Late -->
@@ -282,7 +419,7 @@
 <div class="w-10 h-10 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-2">
 <i class="fa-regular fa-clock"></i>
 </div>
-<p class="text-2xl font-black text-slate-800">2</p>
+<p class="text-2xl font-black text-slate-800"><?= $lateCount ?></p>
 <p class="text-xs text-orange-500 font-bold uppercase">Late</p>
 </div>
 <!-- Half Day -->
@@ -290,7 +427,7 @@
 <div class="w-10 h-10 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-2">
 <i class="fa-regular fa-calendar"></i>
 </div>
-<p class="text-2xl font-black text-slate-800">0</p>
+<p class="text-2xl font-black text-slate-800"><?= $halfDayCount ?></p>
 <p class="text-xs text-blue-500 font-bold uppercase">Half Day</p>
 </div>
 </div>
@@ -300,54 +437,46 @@
 <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
 </div>
 <div class="grid grid-cols-7 gap-y-4 text-center">
-<!-- Previous month days -->
-<div class="text-sm text-gray-300">26</div>
-<div class="text-sm text-gray-300">27</div>
-<div class="text-sm text-gray-300">28</div>
-<div class="text-sm text-gray-300">29</div>
-<div class="text-sm text-gray-300">30</div>
-<div class="text-sm text-gray-300">31</div>
-<div class="text-sm text-slate-800 font-medium">1</div>
-<!-- Current month -->
-<div class="text-sm text-slate-800 font-medium">2</div>
-<div class="text-sm text-slate-800 font-medium">3</div>
-<div class="text-sm text-slate-800 font-medium">4</div>
-<div class="text-sm text-slate-800 font-medium">5</div>
-<div class="text-sm text-slate-800 font-medium">6</div>
-<div class="text-sm text-slate-800 font-medium">7</div>
-<div class="text-sm text-slate-800 font-medium">8</div>
-<div class="text-sm text-slate-800 font-medium">9</div>
-<div class="text-sm text-slate-800 font-medium">10</div>
-<div class="text-sm text-slate-800 font-medium">11</div>
-<div class="text-sm text-slate-800 font-medium">12</div>
-<div class="text-sm text-slate-800 font-medium">13</div>
-<div class="text-sm text-slate-800 font-medium">14</div>
-<div class="text-sm text-slate-800 font-medium">15</div>
-<div class="text-sm text-slate-800 font-medium">16</div>
-<div class="text-sm text-slate-800 font-medium">17</div>
-<div class="text-sm text-slate-800 font-medium">18</div>
-<div class="text-sm text-slate-800 font-medium">19</div>
-<!-- Today highlight -->
+<?php
+$firstDow = (int) date('w', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
+$totalDays = (int) date('t', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
+for ($i = 0; $i < $firstDow; $i++):
+    $prevDay = (int) date('t', mktime(0, 0, 0, $currentMonth - 1, 1, $currentYear)) - $firstDow + 1 + $i;
+?>
+<div class="text-sm text-gray-300"><?= $prevDay ?></div>
+<?php endfor; ?>
+<?php for ($d = 1; $d <= $totalDays; $d++):
+    $rec = $calendarRecords[$d] ?? null;
+    $status = $rec ? strtolower($rec['status']) : null;
+    $isToday = ($d === $todayDay);
+    if ($isToday):
+        $todayColor = match($status) {
+            'present' => 'bg-green-600',
+            'late' => 'bg-orange-500',
+            'absent' => 'bg-red-500',
+            default => 'bg-green-600',
+        };
+?>
 <div class="relative flex items-center justify-center">
-<span class="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold z-10">20</span>
+<span class="w-8 h-8 <?= $todayColor ?> text-white rounded-full flex items-center justify-center text-sm font-bold z-10"><?= $d ?></span>
 </div>
-<div class="text-sm text-slate-800 font-medium">21</div>
-<div class="text-sm text-slate-800 font-medium">22</div>
-<div class="text-sm text-slate-800 font-medium">23</div>
-<div class="text-sm text-slate-800 font-medium">24</div>
-<div class="text-sm text-slate-800 font-medium">25</div>
-<div class="text-sm text-slate-800 font-medium">26</div>
-<div class="text-sm text-slate-800 font-medium">27</div>
-<div class="text-sm text-slate-800 font-medium">28</div>
-<div class="text-sm text-slate-800 font-medium">29</div>
-<div class="text-sm text-slate-800 font-medium">30</div>
-<!-- Next month -->
-<div class="text-sm text-gray-300">1</div>
-<div class="text-sm text-gray-300">2</div>
-<div class="text-sm text-gray-300">3</div>
-<div class="text-sm text-gray-300">4</div>
-<div class="text-sm text-gray-300">5</div>
-<div class="text-sm text-gray-300">6</div>
+<?php elseif ($status): ?>
+<div class="text-sm font-medium text-slate-800 relative flex items-center justify-center">
+<span><?= $d ?></span>
+<span class="absolute -bottom-1 w-1.5 h-1.5 <?= match($status) { 'present' => 'bg-green-500', 'late' => 'bg-orange-500', 'absent' => 'bg-red-400', default => '' } ?> rounded-full"></span>
+</div>
+<?php else: ?>
+<div class="text-sm <?= $d <= $todayDay ? 'text-slate-800 font-medium' : 'text-gray-300' ?>"><?= $d ?></div>
+<?php endif; ?>
+<?php endfor; ?>
+<?php
+$rem = 7 - (($firstDow + $totalDays) % 7);
+if ($rem < 7):
+    for ($i = 1; $i <= $rem; $i++):
+?>
+<div class="text-sm text-gray-300"><?= $i ?></div>
+<?php endfor;
+endif; ?>
 </div>
 </div>
 </div>
@@ -389,57 +518,37 @@
 </tr>
 </thead>
 <tbody class="divide-y divide-gray-50 text-sm">
-<!-- Row 1 -->
+<?php if (!empty($historyRows)): ?>
+<?php foreach ($historyRows as $h): ?>
+<?php
+$hStatus = strtolower($h['status'] ?? '');
+$hIn = $h['check_in'] ?? null;
+$hOut = $h['check_out'] ?? null;
+$hMins = (int) ($h['minutes_worked'] ?? 0);
+$isWeekend = in_array((int) date('w', strtotime($h['date'])), [0, 6]);
+$badgeClass = match(true) {
+    $isWeekend => 'bg-blue-50 text-blue-500 border border-blue-100',
+    $hStatus === 'present' => 'bg-green-100 text-green-600',
+    $hStatus === 'late' => 'bg-orange-100 text-orange-600',
+    $hStatus === 'absent' || (!$hIn && !$isWeekend) => 'bg-red-100 text-red-500',
+    default => 'bg-slate-100 text-slate-500',
+};
+$badgeLabel = $isWeekend ? 'Weekly Off' : (ucfirst($h['status'] ?? 'Absent'));
+$inClass = $hStatus === 'late' ? 'text-orange-600' : ($hIn ? 'text-slate-800' : 'text-gray-400 italic');
+?>
 <tr class="hover:bg-gray-50/50 transition-colors">
-<td class="px-6 py-4 font-medium text-slate-700">20 June 202- (Thu)</td>
-<td class="px-6 py-4 font-bold text-green-600">09:00 AM</td>
-<td class="px-6 py-4 text-gray-400">--:-- --</td>
-<td class="px-6 py-4">00h 05m</td>
+<td class="px-6 py-4 font-medium <?= $isWeekend ? 'text-slate-400' : 'text-slate-700' ?>"><?= date('j F Y (D)', strtotime($h['date'])) ?></td>
+<td class="px-6 py-4 font-bold <?= $inClass ?>"><?= $hIn ? formatTime($hIn) : '--:-- --' ?></td>
+<td class="px-6 py-4 <?= $hOut && $hOut !== '00:00:00' ? 'font-bold text-slate-800' : 'text-gray-400 italic' ?>"><?= $hOut && $hOut !== '00:00:00' ? formatTime($hOut) : '--:-- --' ?></td>
+<td class="px-6 py-4 <?= $hMins > 0 ? '' : 'text-gray-400' ?>"><?= formatHours($hMins) ?></td>
 <td class="px-6 py-4">
-<span class="bg-green-100 text-green-600 text-[10px] font-bold px-2.5 py-1 rounded-md">Present</span>
-</td>
-
-</tr>
-<!-- Row 2 -->
-<tr class="hover:bg-gray-50/50 transition-colors">
-<td class="px-6 py-4 font-medium text-slate-700">19 June 202- (Wed)</td>
-<td class="px-6 py-4 font-bold text-slate-800">08:55 AM</td>
-<td class="px-6 py-4 font-bold text-red-500">05:10 PM</td>
-<td class="px-6 py-4">08h 15m</td>
-<td class="px-6 py-4">
-<span class="bg-orange-100 text-orange-600 text-[10px] font-bold px-2.5 py-1 rounded-md">Late</span>
+<span class="text-[10px] font-bold px-2.5 py-1 rounded-md <?= $badgeClass ?>"><?= $badgeLabel ?></span>
 </td>
 </tr>
-<!-- Row 3 -->
-<tr class="hover:bg-gray-50/50 transition-colors">
-<td class="px-6 py-4 font-medium text-slate-700">18 June 202- (Tue)</td>
-<td class="px-6 py-4 font-bold text-slate-800">09:05 AM</td>
-<td class="px-6 py-4 font-bold text-slate-800">05:00 PM</td>
-<td class="px-6 py-4">07h 55m</td>
-<td class="px-6 py-4">
-<span class="bg-green-100 text-green-600 text-[10px] font-bold px-2.5 py-1 rounded-md">Present</span>
-</td>
-</tr>
-<!-- Row 4 -->
-<tr class="hover:bg-gray-50/50 transition-colors text-gray-400">
-<td class="px-6 py-4 font-medium">17 June 202- (Mon)</td>
-<td class="px-6 py-4 italic">--:-- --</td>
-<td class="px-6 py-4 italic">--:-- --</td>
-<td class="px-6 py-4">00h 00m</td>
-<td class="px-6 py-4">
-<span class="bg-red-100 text-red-500 text-[10px] font-bold px-2.5 py-1 rounded-md">Absent</span>
-</td>
-</tr>
-<!-- Row 5 -->
-<tr class="hover:bg-gray-50/50 transition-colors">
-<td class="px-6 py-4 font-medium text-slate-400">16 June 202- (Sun)</td>
-<td class="px-6 py-4 italic text-gray-300">--:-- --</td>
-<td class="px-6 py-4 italic text-gray-300">--:-- --</td>
-<td class="px-6 py-4 text-gray-400">00h 00m</td>
-<td class="px-6 py-4">
-<span class="bg-blue-50 text-blue-500 text-[10px] font-bold px-2.5 py-1 rounded-md border border-blue-100">Weekly Off</span>
-</td>
-</tr>
+<?php endforeach; ?>
+<?php else: ?>
+<tr><td class="px-6 py-4 text-gray-400" colspan="5">No attendance records found.</td></tr>
+<?php endif; ?>
 </tbody>
 </table>
 </div>
@@ -450,4 +559,105 @@
 <!-- END: MainContent -->
 </div>
 <!-- END: MainContainer -->
+<script>
+function updateClock() {
+    const now = new Date();
+    let h = now.getHours();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const m = String(now.getMinutes()).padStart(2, '0');
+    const s = String(now.getSeconds()).padStart(2, '0');
+    document.getElementById('liveClock').textContent = h + ':' + m + ' ' + ampm;
+    document.getElementById('liveSeconds').textContent = s;
+    const deg = (now.getSeconds() / 60) * 360;
+    const circle = document.querySelector('.timer-circle');
+    if (circle) {
+        circle.style.background = 'conic-gradient(#2563eb ' + deg + 'deg, #e2e8f0 ' + deg + 'deg)';
+    }
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+async function handleCheckIn() {
+    const btn = document.querySelector('#actionButtons button');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+    try {
+        const form = new FormData();
+        form.append('action', 'checkin');
+        const res = await fetch('attendance_handler.php', { method: 'POST', body: form });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Check In';
+        }
+    } catch (e) {
+        alert('Network error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Check In';
+    }
+}
+
+async function handleCheckOut() {
+    const btn = document.querySelector('#actionButtons button');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+    try {
+        const form = new FormData();
+        form.append('action', 'checkout');
+        const res = await fetch('attendance_handler.php', { method: 'POST', body: form });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Check Out';
+        }
+    } catch (e) {
+        alert('Network error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-right-from-bracket"></i> Check Out';
+    }
+}
+</script>
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const isOpen = sidebar.classList.contains('translate-x-0');
+    if (isOpen) {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (overlay) overlay.classList.add('hidden');
+        if (main) main.style.marginLeft = '0';
+    } else {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (overlay) overlay.classList.remove('hidden');
+        if (main) main.style.marginLeft = '';
+    }
+}
+function setSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    if (window.innerWidth >= 768) {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (main) main.style.marginLeft = '';
+    } else {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (main) main.style.marginLeft = '0';
+    }
+    if (overlay) overlay.classList.add('hidden');
+}
+setSidebarState();
+window.addEventListener('resize', setSidebarState);
+</script>
 </body></html>
