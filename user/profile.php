@@ -1,3 +1,145 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/db.php';
+
+$userId = (int) ($_SESSION['user_id'] ?? 0);
+$user = [];
+
+if ($userId <= 0) {
+    header('Location: ../auth/login.php');
+    exit;
+}
+
+// Ensure extra columns exist before querying them
+$extraCols = ['blood_group' => 'VARCHAR(50) DEFAULT NULL', 'date_of_birth' => 'DATE DEFAULT NULL', 'gender' => 'VARCHAR(20) DEFAULT NULL', 'avatar' => 'VARCHAR(500) DEFAULT NULL'];
+foreach ($extraCols as $col => $def) {
+    $r = $conn->query("SHOW COLUMNS FROM employee_profiles LIKE '$col'");
+    if ($r->num_rows === 0) {
+        $conn->query("ALTER TABLE employee_profiles ADD COLUMN $col $def");
+    }
+}
+
+$stmt = $conn->prepare("
+    SELECT u.id, u.name, u.email, u.status, u.department_id, u.created_at, u.role,
+           ep.phone, ep.address, ep.position,
+           ep.position AS job_title,
+           ep.blood_group, ep.date_of_birth, ep.gender, ep.avatar,
+           d.name AS department_name
+    FROM `user` u
+    LEFT JOIN employee_profiles ep ON ep.user_id = u.id
+    LEFT JOIN departments d ON d.id = u.department_id
+    WHERE u.id = ?
+");
+if (!$stmt) {
+    die('Database error: ' . $conn->error);
+}
+$stmt->bind_param('i', $userId);
+$stmt->execute();
+$result = $stmt->get_result();
+$user = $result->fetch_assoc();
+
+if (!$user) {
+    header('Location: ../auth/login.php');
+    exit;
+}
+
+$message = '';
+$messageType = '';
+
+// Ensure upload directory exists
+$uploadDir = __DIR__ . '/../uploads/avatars/';
+if (!is_dir($uploadDir)) {
+    mkdir($uploadDir, 0777, true);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
+    $name    = trim($_POST['name'] ?? '');
+    $email   = trim($_POST['email'] ?? '');
+    $phone   = trim($_POST['phone'] ?? '');
+    $address = trim($_POST['address'] ?? '');
+    $position = trim($_POST['position'] ?? '');
+    $bloodGroup = trim($_POST['blood_group'] ?? '');
+    $dob     = trim($_POST['date_of_birth'] ?? '');
+    $gender  = trim($_POST['gender'] ?? '');
+
+    if ($name === '' || $email === '') {
+        $message = 'Name and email are required.';
+        $messageType = 'error';
+    } else {
+        $updateUser = $conn->prepare("UPDATE `user` SET name = ?, email = ? WHERE id = ?");
+        $updateUser->bind_param('ssi', $name, $email, $userId);
+        $updateUser->execute();
+
+        $check = $conn->prepare("SELECT id FROM employee_profiles WHERE user_id = ?");
+        $check->bind_param('i', $userId);
+        $check->execute();
+        $exists = $check->get_result()->fetch_assoc();
+
+        $dobVal = $dob !== '' ? $dob : null;
+
+        if ($exists) {
+            $up = $conn->prepare("UPDATE employee_profiles SET phone=?, address=?, position=?, blood_group=?, date_of_birth=?, gender=? WHERE user_id=?");
+            $up->bind_param('ssssssi', $phone, $address, $position, $bloodGroup, $dobVal, $gender, $userId);
+            $up->execute();
+        } else {
+            $deptId = (int) ($user['department_id'] ?? 0);
+            $ins = $conn->prepare("INSERT INTO employee_profiles (user_id, department_id, phone, address, email, position, blood_group, date_of_birth, gender) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $ins->bind_param('iisssssss', $userId, $deptId, $phone, $address, $email, $position, $bloodGroup, $dobVal, $gender);
+            $ins->execute();
+        }
+
+        $_SESSION['user_name'] = $name;
+
+        $message = 'Profile updated successfully!';
+        $messageType = 'success';
+
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $user = $result->fetch_assoc();
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_avatar'])) {
+    if (isset($_FILES['avatar']) && $_FILES['avatar']['error'] === UPLOAD_ERR_OK) {
+        $ext = strtolower(pathinfo($_FILES['avatar']['name'], PATHINFO_EXTENSION));
+        $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        if (in_array($ext, $allowed)) {
+            $filename = 'user_' . $userId . '_' . time() . '.' . $ext;
+            move_uploaded_file($_FILES['avatar']['tmp_name'], $uploadDir . $filename);
+
+            $check = $conn->prepare("SELECT id FROM employee_profiles WHERE user_id = ?");
+            $check->bind_param('i', $userId);
+            $check->execute();
+            $exists = $check->get_result()->fetch_assoc();
+
+            if ($exists) {
+                $up = $conn->prepare("UPDATE employee_profiles SET avatar = ? WHERE user_id = ?");
+                $up->bind_param('si', $filename, $userId);
+                $up->execute();
+            } else {
+                $deptId = (int) ($user['department_id'] ?? 0);
+                $email = $user['email'] ?? '';
+                $ins = $conn->prepare("INSERT INTO employee_profiles (user_id, department_id, email, avatar) VALUES (?, ?, ?, ?)");
+                $ins->bind_param('iiss', $userId, $deptId, $email, $filename);
+                $ins->execute();
+            }
+
+            $message = 'Profile image updated!';
+            $messageType = 'success';
+        } else {
+            $message = 'Allowed types: jpg, jpeg, png, gif, webp';
+            $messageType = 'error';
+        }
+    } else {
+        $message = 'No file selected or upload error.';
+        $messageType = 'error';
+    }
+
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $user = $result->fetch_assoc();
+}
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en"><head>
@@ -111,8 +253,9 @@
     </style>
 </head>
 <body class="text-on-surface bg-background">
+<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 <!-- Predicted SideNavBar Component -->
-<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide">
+<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide -translate-x-full transition-transform duration-300">
 <div class="px-md mb-xl">
 
 <h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Smart Attendence</h1>
@@ -144,51 +287,47 @@
 <div class="mt-auto border-t border-on-primary-fixed-variant/20 pt-lg space-y-1">
 <a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="requestpassword.php">
 <span class="material-symbols-outlined">lock</span>
-<span class="font-label-caps text-label-caps">Change Password</span>
+<span class="font-label-caps text-label-caps">change password</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="userdashboard.php">
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="../auth/logout.php">
 <span class="material-symbols-outlined" data-icon="logout">logout</span>
 <span class="font-label-caps text-label-caps">Logout</span>
 </a>
 </div>
 </aside>
 <!-- TopNavBar Anchor -->
-<header class="fixed top-0 left-0 right-0 ml-sidebar-width h-16 bg-surface border-b border-outline-variant flex items-center justify-between px-lg z-40 transition-colors duration-150">
+<header class="fixed top-0 left-0 right-0 md:ml-sidebar-width h-16 bg-surface border-b border-outline-variant flex items-center justify-between px-lg z-40 transition-colors duration-150">
 <div class="flex items-center space-x-md">
-<button class="p-base hover:bg-surface-container-low rounded-lg">
+<button onclick="toggleSidebar()" class="p-base hover:bg-surface-container-low rounded-lg">
 <span class="material-symbols-outlined text-on-surface-variant">menu</span>
 </button>
 <h2 class="font-headline-sm text-headline-sm text-primary font-bold">HR Connect</h2>
 </div>
-<div class="flex items-center space-x-lg">
-<div class="relative hidden lg:block">
-<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">search</span>
-<input class="bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-xs focus:ring-2 focus:ring-primary/20 w-64 text-body-sm" placeholder="Search..." type="text"/>
-</div>
 <div class="flex items-center space-x-md">
-
-<button class="p-base hover:bg-surface-container-low rounded-lg transition-colors">
-<span class="material-symbols-outlined text-on-surface-variant">settings</span>
-</button>
 </div>
-<div class="h-8 w-[1px] bg-outline-variant"></div>
 <div class="flex items-center space-x-sm cursor-pointer group">
 <div class="text-right">
-<p class="font-body-md font-semibold text-primary leading-tight">Kay Ko</p>
-<p class="text-[11px] text-on-surface-variant">Employee</p>
+<p class="font-body-md font-semibold text-primary leading-tight"><?= htmlspecialchars($user['name'] ?? '') ?></p>
+<p class="text-[11px] text-on-surface-variant"><?= htmlspecialchars($user['job_title'] ?? $user['role'] ?? 'Employee') ?></p>
 </div>
-<img src="https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
+<img src="<?= !empty($user['avatar']) ? '../uploads/avatars/' . htmlspecialchars($user['avatar']) : 'https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg' ?>" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant object-cover" alt="">
 </div>
 </div>
 </header>
 <!-- Main Canvas -->
-<main class="ml-sidebar-width pt-16 h-screen overflow-y-auto no-scrollbar bg-background">
+<main class="md:ml-sidebar-width pt-16 h-screen overflow-y-auto no-scrollbar bg-background">
 <div class="p-lg max-w-[1600px] mx-auto">
 <!-- Page Header -->
 <div class="mb-xl">
 <h3 class="font-headline-md text-headline-md text-primary">My Profile</h3>
 <p class="text-on-surface-variant text-body-md">View and update your personal information</p>
 </div>
+<?php if ($message !== ''): ?>
+<div class="mb-lg px-lg py-md rounded-lg font-semibold text-body-sm <?= $messageType === 'success' ? 'bg-secondary-container text-on-secondary-container' : 'bg-error-container text-on-error-container' ?> flex items-center gap-md">
+<span class="material-symbols-outlined"><?= $messageType === 'success' ? 'check_circle' : 'error' ?></span>
+<?= htmlspecialchars($message) ?>
+</div>
+<?php endif; ?>
 <div class="grid grid-cols-12 gap-lg">
 <!-- Left Column: Avatar & Quick Info -->
 <div class="col-span-12 lg:col-span-4 space-y-lg">
@@ -196,17 +335,21 @@
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-xl shadow-sm flex flex-col items-center text-center">
 <div class="relative mb-lg">
 <div class="w-32 h-32 rounded-full border-4 border-surface-container overflow-hidden">
-<img src="https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg" class="w-32 h-32 rounded-full border-4 border-surface-container overflow-hidden" alt="">
+<img src="<?= !empty($user['avatar']) ? '../uploads/avatars/' . htmlspecialchars($user['avatar']) : 'https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg' ?>" class="w-32 h-32 rounded-full border-4 border-surface-container overflow-hidden object-cover" alt="">
 </div>
-<button class="absolute bottom-1 right-1 bg-surface border border-outline-variant w-8 h-8 rounded-full flex items-center justify-center hover:bg-surface-container shadow-sm transition-colors">
+<form method="POST" enctype="multipart/form-data" id="avatarForm">
+<input type="file" name="avatar" id="avatarInput" accept="image/jpeg,image/png,image/gif,image/webp" class="hidden" onchange="document.getElementById('avatarForm').submit()">
+<input type="hidden" name="upload_avatar" value="1">
+</form>
+<button type="button" onclick="document.getElementById('avatarInput').click()" class="absolute bottom-1 right-1 bg-surface border border-outline-variant w-8 h-8 rounded-full flex items-center justify-center hover:bg-surface-container shadow-sm transition-colors">
 <span class="material-symbols-outlined text-[18px]">photo_camera</span>
 </button>
 </div>
-<h4 class="font-headline-sm text-headline-sm text-primary"></h4>
-<p class="text-on-surface-variant text-body-md mb-md">Artificial Intelligence & Automation</p>
+<h4 class="font-headline-sm text-headline-sm text-primary"><?= htmlspecialchars($user['name'] ?? '') ?></h4>
+<p class="text-on-surface-variant text-body-md mb-md"><?= htmlspecialchars($user['job_title'] ?? $user['position'] ?? 'Employee') ?></p>
 <span class="px-md py-base bg-secondary-container text-on-secondary-container rounded-full text-[12px] font-semibold flex items-center">
 <span class="w-2 h-2 bg-secondary rounded-full mr-2"></span>
-              Active
+<?= htmlspecialchars(ucfirst($user['status'] ?? 'Active')) ?>
             </span>
 </div>
 <!-- Quick Info Card -->
@@ -217,15 +360,15 @@
 <div class="p-lg space-y-md">
 <div class="flex justify-between items-center py-xs border-b border-surface-container last:border-0">
 <span class="text-on-surface-variant text-body-sm">Blood Group</span>
-<span class="font-semibold text-primary">O+</span>
+<span class="font-semibold text-primary"><?= htmlspecialchars($user['blood_group'] ?? '—') ?></span>
 </div>
 <div class="flex justify-between items-center py-xs border-b border-surface-container last:border-0">
 <span class="text-on-surface-variant text-body-sm">Date of Birth</span>
-<span class="font-semibold text-primary">15 May 200-</span>
+<span class="font-semibold text-primary"><?= htmlspecialchars(!empty($user['date_of_birth']) ? date('d M Y', strtotime($user['date_of_birth'])) : '—') ?></span>
 </div>
 <div class="flex justify-between items-center py-xs border-b border-surface-container last:border-0">
 <span class="text-on-surface-variant text-body-sm">Gender</span>
-<span class="font-semibold text-primary">Female</span>
+<span class="font-semibold text-primary"><?= htmlspecialchars(ucfirst($user['gender'] ?? '—')) ?></span>
 </div>
 </div>
 </div>
@@ -235,7 +378,7 @@
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm h-full flex flex-col">
 <div class="px-xl py-lg border-b border-outline-variant/30 flex justify-between items-center">
 <h5 class="font-headline-sm text-headline-sm text-primary">Personal Information</h5>
-<button class="flex items-center space-x-base px-md py-xs border border-primary text-primary rounded-lg hover:bg-primary/5 transition-colors font-semibold text-body-sm">
+<button onclick="openEditModal()" class="flex items-center space-x-base px-md py-xs border border-primary text-primary rounded-lg hover:bg-primary/5 transition-colors font-semibold text-body-sm">
 <span class="material-symbols-outlined text-[18px]">edit</span>
 <span>Edit Profile</span>
 </button>
@@ -244,35 +387,35 @@
 <!-- Field Item -->
 <div class="space-y-base">
 <label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Employee ID</label>
-<div class="p-md bg-surface-container-low rounded-lg font-data-mono text-primary">YGN-0005</div>
+                <div class="p-md bg-surface-container-low rounded-lg font-data-mono text-primary">EMP-<?= (int) ($user['id'] ?? 0) ?></div>
 </div>
 <div class="space-y-base">
 <label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Full Name</label>
-<div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary">Kay Ko</div>
+<div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary"><?= htmlspecialchars($user['name'] ?? '') ?></div>
 </div>
 <div class="space-y-base">
 <label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Email Address</label>
-<div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary">kay@gmail.com</div>
+                <div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary"><?= htmlspecialchars($user['email'] ?? '') ?></div>
 </div>
 <div class="space-y-base">
 <label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Phone Number</label>
-<div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary">+959 773254321</div>
+                <div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary"><?= htmlspecialchars($user['phone'] ?? '—') ?></div>
 </div>
 <div class="space-y-base">
 <label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Department</label>
-<div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary">Data Science & Analytics</div>
+                <div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary"><?= htmlspecialchars($user['department_name'] ?? '—') ?></div>
 </div>
 <div class="space-y-base">
 <label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Designation</label>
-<div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary">Artificial Intelligence & Automation</div>
+                <div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary"><?= htmlspecialchars($user['position'] ?? $user['job_title'] ?? '—') ?></div>
 </div>
 <div class="space-y-base">
 <label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Date of Joining</label>
-<div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary">01 Jan 2024</div>
+                <div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary"><?= htmlspecialchars(date('d M Y', strtotime($user['created_at'] ?? 'now'))) ?></div>
 </div>
 <div class="space-y-base">
 <label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Location</label>
-<div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary">Yangon</div>
+                <div class="p-md bg-surface-container-low rounded-lg font-body-md text-primary"><?= htmlspecialchars($user['address'] ?? '—') ?></div>
 </div>
 </div>
 <!-- Decorative Visual Element -->
@@ -296,6 +439,85 @@
 </footer>
 </div>
 </main>
+<!-- Edit Profile Modal -->
+<div id="editModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40" style="display:none;">
+<div class="bg-surface-container-lowest rounded-xl shadow-xl max-w-2xl w-full mx-lg max-h-[90vh] overflow-y-auto">
+<form method="POST" class="p-xl">
+<div class="flex items-center justify-between mb-lg">
+<h4 class="font-headline-sm text-headline-sm text-primary">Edit Profile</h4>
+<button type="button" onclick="closeEditModal()" class="p-base hover:bg-surface-container-low rounded-lg">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-x-xl gap-y-md">
+<div class="space-y-base">
+<label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Full Name</label>
+<input name="name" value="<?= htmlspecialchars($user['name'] ?? '') ?>" class="w-full p-md bg-surface-container-low rounded-lg border-none text-body-sm text-primary focus:ring-2 focus:ring-primary/20" required/>
+</div>
+<div class="space-y-base">
+<label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Email</label>
+<input name="email" type="email" value="<?= htmlspecialchars($user['email'] ?? '') ?>" class="w-full p-md bg-surface-container-low rounded-lg border-none text-body-sm text-primary focus:ring-2 focus:ring-primary/20" required/>
+</div>
+<div class="space-y-base">
+<label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Phone</label>
+<input name="phone" value="<?= htmlspecialchars($user['phone'] ?? '') ?>" class="w-full p-md bg-surface-container-low rounded-lg border-none text-body-sm text-primary focus:ring-2 focus:ring-primary/20"/>
+</div>
+<div class="space-y-base">
+<label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Address / Location</label>
+<input name="address" value="<?= htmlspecialchars($user['address'] ?? '') ?>" class="w-full p-md bg-surface-container-low rounded-lg border-none text-body-sm text-primary focus:ring-2 focus:ring-primary/20"/>
+</div>
+<div class="space-y-base">
+<label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Designation</label>
+<input name="position" value="<?= htmlspecialchars($user['position'] ?? '') ?>" class="w-full p-md bg-surface-container-low rounded-lg border-none text-body-sm text-primary focus:ring-2 focus:ring-primary/20"/>
+</div>
+<div class="space-y-base">
+<label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Blood Group</label>
+<select name="blood_group" class="w-full p-md bg-surface-container-low rounded-lg border-none text-body-sm text-primary focus:ring-2 focus:ring-primary/20">
+<option value="">—</option>
+<option value="A+" <?= ($user['blood_group'] ?? '') === 'A+' ? 'selected' : '' ?>>A+</option>
+<option value="A-" <?= ($user['blood_group'] ?? '') === 'A-' ? 'selected' : '' ?>>A-</option>
+<option value="B+" <?= ($user['blood_group'] ?? '') === 'B+' ? 'selected' : '' ?>>B+</option>
+<option value="B-" <?= ($user['blood_group'] ?? '') === 'B-' ? 'selected' : '' ?>>B-</option>
+<option value="AB+" <?= ($user['blood_group'] ?? '') === 'AB+' ? 'selected' : '' ?>>AB+</option>
+<option value="AB-" <?= ($user['blood_group'] ?? '') === 'AB-' ? 'selected' : '' ?>>AB-</option>
+<option value="O+" <?= ($user['blood_group'] ?? '') === 'O+' ? 'selected' : '' ?>>O+</option>
+<option value="O-" <?= ($user['blood_group'] ?? '') === 'O-' ? 'selected' : '' ?>>O-</option>
+</select>
+</div>
+<div class="space-y-base">
+<label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Date of Birth</label>
+<input name="date_of_birth" type="date" value="<?= htmlspecialchars($user['date_of_birth'] ?? '') ?>" class="w-full p-md bg-surface-container-low rounded-lg border-none text-body-sm text-primary focus:ring-2 focus:ring-primary/20"/>
+</div>
+<div class="space-y-base">
+<label class="text-on-surface-variant text-[11px] font-bold uppercase tracking-wider">Gender</label>
+<select name="gender" class="w-full p-md bg-surface-container-low rounded-lg border-none text-body-sm text-primary focus:ring-2 focus:ring-primary/20">
+<option value="">—</option>
+<option value="male" <?= ($user['gender'] ?? '') === 'male' ? 'selected' : '' ?>>Male</option>
+<option value="female" <?= ($user['gender'] ?? '') === 'female' ? 'selected' : '' ?>>Female</option>
+<option value="other" <?= ($user['gender'] ?? '') === 'other' ? 'selected' : '' ?>>Other</option>
+</select>
+</div>
+</div>
+<div class="flex justify-end gap-md mt-xl pt-lg border-t border-outline-variant/30">
+<button type="button" onclick="closeEditModal()" class="px-md py-xs border border-outline-variant text-on-surface-variant rounded-lg hover:bg-surface-container-low transition-colors text-body-sm font-semibold">Cancel</button>
+<button type="submit" name="update_profile" class="px-md py-xs bg-primary text-on-primary rounded-lg hover:bg-primary-container transition-colors text-body-sm font-semibold">Save Changes</button>
+</div>
+</form>
+</div>
+</div>
+<script>
+function openEditModal() {
+document.getElementById('editModal').style.display = 'flex';
+document.body.style.overflow = 'hidden';
+}
+function closeEditModal() {
+document.getElementById('editModal').style.display = 'none';
+document.body.style.overflow = '';
+}
+document.getElementById('editModal').addEventListener('click', function(e) {
+if (e.target === this) closeEditModal();
+});
+</script>
 <!-- Interactive Ripple Effect Script for Buttons -->
 <script>
     document.querySelectorAll('button, a').forEach(elem => {
@@ -338,4 +560,46 @@
       background-color: rgba(130, 247, 216, 0.05);
     }
   </style>
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    const isOpen = sidebar.classList.contains('translate-x-0');
+    if (isOpen) {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (overlay) overlay.classList.add('hidden');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.marginLeft = '0';
+    } else {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (overlay) overlay.classList.remove('hidden');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.marginLeft = '';
+    }
+}
+function setSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    if (window.innerWidth >= 768) {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.marginLeft = '';
+    } else {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.marginLeft = '0';
+    }
+    if (overlay) overlay.classList.add('hidden');
+}
+setSidebarState();
+window.addEventListener('resize', setSidebarState);
+</script>
 </body></html>

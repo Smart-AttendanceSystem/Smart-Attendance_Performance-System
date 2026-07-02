@@ -1,3 +1,195 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/db.php';
+
+$role = $_SESSION['user_role'] ?? '';
+if ($role !== 'admin') {
+    header('Location: ../auth/login.php');
+    exit;
+}
+
+$adminId = (int) ($_SESSION['user_id'] ?? 0);
+$adminName = $_SESSION['user_name'] ?? 'Admin';
+$adminAvatar = $_SESSION['user_avatar'] ?? '';
+if (empty($adminAvatar) && $adminId > 0) {
+    $avQuery = $conn->prepare("SELECT ep.avatar FROM employee_profiles ep WHERE ep.user_id = ?");
+    $avQuery->bind_param('i', $adminId);
+    $avQuery->execute();
+    $avRow = $avQuery->get_result()->fetch_assoc();
+    $adminAvatar = $avRow['avatar'] ?? '';
+    if (!empty($adminAvatar)) $_SESSION['user_avatar'] = $adminAvatar;
+}
+$defaultAvatar = 'https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg';
+$adminAvatarDisplay = !empty($adminAvatar) ? htmlspecialchars($adminAvatar) : $defaultAvatar;
+
+$message = '';
+
+if (isset($_GET['success']) && $_GET['success'] === '1') {
+    $message = 'Employee added successfully.';
+}
+
+if (isset($_GET['updated']) && $_GET['updated'] === '1') {
+    $message = 'Employee updated successfully.';
+}
+
+if (isset($_GET['deleted']) && $_GET['deleted'] === '1') {
+    $message = 'Employee deleted successfully.';
+}
+
+if (isset($_GET['password_reset']) && $_GET['password_reset'] === '1') {
+    $message = 'Password reset successfully.';
+}
+
+$sort = isset($_GET['sort']) && $_GET['sort'] === 'asc' ? 'ASC' : 'DESC';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset_employee_password'])) {
+    $employeeId = (int) ($_POST['employee_id'] ?? 0);
+    $newPassword = trim($_POST['new_password'] ?? '');
+
+    if ($employeeId <= 0 || strlen($newPassword) < 4) {
+        $message = 'Invalid request.';
+    } else {
+        $empCheck = $conn->prepare("SELECT id, name FROM `user` WHERE id = ? AND role = 'employee'");
+        $empCheck->bind_param('i', $employeeId);
+        $empCheck->execute();
+        $empResult = $empCheck->get_result();
+        if ($empResult->num_rows > 0) {
+            $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
+            $updateStmt = $conn->prepare("UPDATE `user` SET password = ? WHERE id = ?");
+            $updateStmt->bind_param('si', $passwordHash, $employeeId);
+            if ($updateStmt->execute()) {
+                header('Location: employee_management.php?password_reset=1');
+                exit;
+            } else {
+                $message = 'Could not reset password. Please try again.';
+            }
+        } else {
+            $message = 'Employee not found.';
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_employee'])) {
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $departmentId = (int) ($_POST['department_id'] ?? 0);
+    $position = trim($_POST['position'] ?? '');
+    $employmentType = trim($_POST['employment_type'] ?? 'Full-time');
+
+    if ($name !== '' && $email !== '' && $departmentId > 0) {
+        $emailCheck = $conn->prepare("SELECT id FROM `user` WHERE email = ?");
+        $emailCheck->bind_param('s', $email);
+        $emailCheck->execute();
+        if ($emailCheck->get_result()->num_rows > 0) {
+            $message = 'An employee with this email already exists.';
+        } else {
+            $passwordHash = password_hash('123456', PASSWORD_DEFAULT);
+            $stmt = $conn->prepare("INSERT INTO `user` (department_id, name, email, password, status, role) VALUES (?, ?, ?, ?, 'Active', 'employee')");
+            $stmt->bind_param('isss', $departmentId, $name, $email, $passwordHash);
+            if ($stmt->execute()) {
+                $userId = $stmt->insert_id;
+                $profileStmt = $conn->prepare("INSERT INTO employee_profiles (user_id, department_id, email, position, phone, address) VALUES (?, ?, ?, ?, '', '')");
+                $profileStmt->bind_param('iiss', $userId, $departmentId, $email, $position);
+                $profileStmt->execute();
+                header('Location: employee_management.php?success=1');
+                exit;
+            } else {
+                $message = 'Could not add employee. Please try again.';
+            }
+        }
+    } else {
+        $message = 'Please fill out the required fields.';
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_employee'])) {
+    $employeeId = (int) ($_POST['employee_id'] ?? 0);
+    if ($employeeId > 0) {
+        $conn->query("DELETE FROM leave_requests WHERE user_id = $employeeId");
+        $conn->query("DELETE FROM attendance WHERE user_id = $employeeId");
+        $conn->query("DELETE FROM employee_profiles WHERE user_id = $employeeId");
+        $stmt = $conn->prepare("DELETE FROM `user` WHERE id = ? AND role = 'employee'");
+        $stmt->bind_param('i', $employeeId);
+        if ($stmt->execute() && $stmt->affected_rows > 0) {
+            header('Location: employee_management.php?deleted=1');
+            exit;
+        } else {
+            $message = 'Could not delete employee.';
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_employee'])) {
+    $employeeId = (int) ($_POST['employee_id'] ?? 0);
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $departmentId = (int) ($_POST['department_id'] ?? 0);
+    $position = trim($_POST['position'] ?? '');
+
+    if ($employeeId > 0 && $name !== '' && $email !== '' && $departmentId > 0) {
+        $stmt = $conn->prepare("UPDATE `user` SET name = ?, email = ?, department_id = ? WHERE id = ? AND role = 'employee'");
+        $stmt->bind_param('ssii', $name, $email, $departmentId, $employeeId);
+        if ($stmt->execute()) {
+            $profileStmt = $conn->prepare("UPDATE employee_profiles SET department_id = ?, email = ?, position = ? WHERE user_id = ?");
+            $profileStmt->bind_param('issi', $departmentId, $email, $position, $employeeId);
+            $profileStmt->execute();
+            header('Location: employee_management.php?updated=1');
+            exit;
+        } else {
+            $message = 'Could not update employee.';
+        }
+    } else {
+        $message = 'Please fill out all required fields.';
+    }
+}
+
+if (isset($_GET['ajax_employee'])) {
+    $ajaxId = (int) $_GET['ajax_employee'];
+    $ajaxRes = $conn->query("SELECT u.id, u.name, u.email, u.department_id, ep.position FROM `user` u LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.id = $ajaxId AND u.role = 'employee'");
+    if ($ajaxRes && $ajaxRes->num_rows > 0) {
+        header('Content-Type: application/json');
+        echo json_encode($ajaxRes->fetch_assoc());
+        exit;
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Employee not found.']);
+    exit;
+}
+
+$currentMonth = date('m');
+$currentYear = date('Y');
+
+$totalEmployees = 0;
+$newHiresThisMonth = 0;
+$employees = [];
+$departments = [];
+
+$empCountRes = $conn->query("SELECT COUNT(*) FROM `user` WHERE role = 'employee'");
+if ($empCountRes) $totalEmployees = (int) $empCountRes->fetch_row()[0];
+
+$newRes = $conn->query("SELECT COUNT(*) FROM `user` WHERE role = 'employee' AND MONTH(created_at) = $currentMonth AND YEAR(created_at) = $currentYear");
+if ($newRes) $newHiresThisMonth = (int) $newRes->fetch_row()[0];
+
+$perPage = 5;
+$page = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
+$totalPages = max(1, ceil($totalEmployees / $perPage));
+$page = min($page, $totalPages);
+$offset = ($page - 1) * $perPage;
+
+$empRes = $conn->query("SELECT u.id, u.name, u.email, u.status, d.name AS department_name, ep.position FROM `user` u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.role = 'employee' ORDER BY u.id $sort LIMIT $perPage OFFSET $offset");
+if ($empRes && $empRes->num_rows > 0) {
+    while ($row = $empRes->fetch_assoc()) {
+        $employees[] = $row;
+    }
+}
+
+$deptRes = $conn->query("SELECT id, name FROM departments ORDER BY name ASC");
+if ($deptRes && $deptRes->num_rows > 0) {
+    while ($row = $deptRes->fetch_assoc()) {
+        $departments[] = $row;
+    }
+}
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en"><head>
@@ -121,10 +313,11 @@
     </style>
 </head>
 <body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
+<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 <!-- SideNavBar -->
-<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary flex flex-col py-lg border-r border-outline-variant shadow-sm z-50 overflow-y-auto">
+<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary flex flex-col py-lg border-r border-outline-variant shadow-sm z-50 overflow-y-auto -translate-x-full transition-transform duration-300">
 <div class="px-md mb-xl">
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary">Admin</h1>
+<h1 class="font-headline-md text-headline-md font-bold text-on-primary"><?= htmlspecialchars($adminName) ?></h1>
 <p class="font-body-md text-body-md text-on-primary">HR Management System</p>
 </div>
 <nav class="flex-1 space-y-base">
@@ -162,10 +355,11 @@
 </div>
 </aside>
 <!-- Main Content Area -->
-<div class="ml-[260px] min-h-screen flex flex-col">
+<div class="md:ml-[260px] min-h-screen flex flex-col">
 <!-- TopNavBar -->
-<header class="fixed top-0 right-0 w-[calc(100%-260px)] h-16 bg-surface border-b border-outline-variant flex justify-between items-center px-lg h-16 z-40 shadow-sm">
+<header class="fixed top-0 right-0 w-full md:w-[calc(100%-260px)] h-16 bg-surface border-b border-outline-variant flex justify-between items-center px-lg h-16 z-40 shadow-sm">
 <div class="flex items-center gap-lg flex-1">
+<button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
 <span class="font-headline-sm text-headline-sm font-semibold text-primary">HR Admin</span>
 <div class="relative w-full max-w-md">
 <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
@@ -177,13 +371,20 @@
                     Add Employee
                 </button>
 <div class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant overflow-hidden ml-sm">
-<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" data-alt="A professional high-resolution corporate headshot of a middle-aged HR executive with a kind smile, wearing a dark navy blazer over a crisp white shirt. The background is a soft-focus modern office interior with warm wooden accents and bright morning sunlight streaming through glass partitions. The lighting is flattering and high-key, conveying a sense of leadership and institutional trust." src="https://i.pinimg.com/736x/5f/cb/0a/5fcb0a5578d81bba2917013c511cc247.jpg"/>
+<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" alt="<?= htmlspecialchars($adminName) ?>" src="<?= $adminAvatarDisplay ?>"/>
 </div>
 </div>
 </header>
 <!-- Main Canvas -->
 <main class="mt-16 p-lg flex-1">
 <div class="max-w-[1600px] mx-auto space-y-lg">
+<?php if ($message !== ''): ?>
+<div class="bg-secondary/10 border border-secondary/30 text-secondary px-lg py-md rounded-lg font-body-sm flex items-center gap-md" id="success-message">
+<span class="material-symbols-outlined text-secondary">check_circle</span>
+<span><?= htmlspecialchars($message) ?></span>
+<button class="ml-auto text-secondary/60 hover:text-secondary" onclick="this.parentElement.remove()">&times;</button>
+</div>
+<?php endif; ?>
 <!-- Page Title & Stats Bar -->
 <div class="flex justify-between items-end">
 <div>
@@ -197,7 +398,7 @@
 </div>
 <div>
 <p class="text-label-caps font-label-caps text-on-surface-variant">Total Staff</p>
-<p class="text-headline-sm font-headline-sm text-primary">1,284</p>
+<p class="text-headline-sm font-headline-sm text-primary"><?= number_format($totalEmployees) ?></p>
 </div>
 </div>
 <div class="bg-surface-container-lowest border border-outline-variant p-md rounded-xl shadow-sm flex items-center gap-md">
@@ -206,7 +407,7 @@
 </div>
 <div>
 <p class="text-label-caps font-label-caps text-on-surface-variant">New This Month</p>
-<p class="text-headline-sm font-headline-sm text-primary">24</p>
+<p class="text-headline-sm font-headline-sm text-primary"><?= $newHiresThisMonth ?></p>
 </div>
 </div>
 </div>
@@ -217,7 +418,7 @@
 <table class="w-full text-left border-collapse">
 <thead>
 <tr class="bg-surface-container-low border-b border-outline-variant">
-<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">ID</th>
+                <th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant cursor-pointer select-none hover:text-primary transition-colors" onclick="window.location='employee_management.php?page=<?= $page ?>&sort=<?= $sort === 'ASC' ? 'desc' : 'asc' ?>'">ID <span class="material-symbols-outlined text-[14px] align-middle"><?= $sort === 'ASC' ? 'arrow_upward' : 'arrow_downward' ?></span></th>
 <th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Name</th>
 <th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Department</th>
 <th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Position</th>
@@ -227,101 +428,60 @@
 </tr>
 </thead>
 <tbody class="font-body-md text-on-surface">
-<!-- Row 1 -->
+<?php if (!empty($employees)): ?>
+<?php foreach ($employees as $emp): ?>
 <tr class="zebra-row hover-row border-b border-surface-container transition-colors">
-<td class="px-lg py-md font-data-mono text-data-mono">YGN-0005</td>
+<td class="px-lg py-md font-data-mono text-data-mono">YGN-<?= str_pad($emp['id'], 4, '0', STR_PAD_LEFT) ?></td>
 <td class="px-lg py-md">
 <div class="flex items-center gap-sm">
-<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden">
-<img src="https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
+<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden flex items-center justify-center text-sm font-semibold text-primary bg-surface-container-high border border-outline-variant">
+<?= htmlspecialchars(strtoupper(substr($emp['name'], 0, 1))) ?>
 </div>
-<span class="font-semibold">Kay Ko</span>
+<span class="font-semibold"><?= htmlspecialchars($emp['name']) ?></span>
 </div>
 </td>
-<td class="px-lg py-md">Artificial Intelligence & Automation</td>
-<td class="px-lg py-md text-on-surface-variant">Strategy & Management</td>
+<td class="px-lg py-md"><?= htmlspecialchars($emp['department_name'] ?? '—') ?></td>
+<td class="px-lg py-md text-on-surface-variant"><?= htmlspecialchars($emp['position'] ?? '—') ?></td>
 <td class="px-lg py-md">
-<span class="inline-flex items-center gap-base px-2 py-1 rounded-full bg-secondary-container text-on-secondary-container text-[11px] font-bold">
-<span class="w-2 h-2 rounded-full bg-secondary"></span> Active
-                                        </span>
+<?php $status = strtolower($emp['status'] ?? 'active'); ?>
+<span class="inline-flex items-center gap-base px-2 py-1 rounded-full text-[11px] font-bold <?= $status === 'active' ? 'bg-secondary-container text-on-secondary-container' : ($status === 'on leave' ? 'bg-tertiary-fixed text-on-tertiary-fixed-variant' : 'bg-error-container/30 text-error') ?>">
+<span class="w-2 h-2 rounded-full <?= $status === 'active' ? 'bg-secondary' : ($status === 'on leave' ? 'bg-tertiary' : 'bg-error') ?>"></span> <?= htmlspecialchars($emp['status'] ?? 'Active') ?>
+</span>
 </td>
-<td class="px-lg py-md text-on-surface-variant">Kay@gmail.com</td>
+<td class="px-lg py-md text-on-surface-variant"><?= htmlspecialchars($emp['email'] ?? '—') ?></td>
 <td class="px-lg py-md text-right">
 <div class="flex justify-end gap-xs">
-<button class="p-1 hover:bg-primary-container/10 rounded text-primary transition-colors" title="Edit Profile"><span class="material-symbols-outlined text-[18px]">edit</span></button>
-<button class="p-1 hover:bg-tertiary-container/10 rounded text-tertiary transition-colors" title="Reset Password"><span class="material-symbols-outlined text-[18px]">lock_reset</span></button>
-<button class="p-1 hover:bg-error-container/20 rounded text-error transition-colors" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+<button class="p-1 hover:bg-primary-container/10 rounded text-primary transition-colors" title="Edit Profile" onclick="openEditModal(<?= $emp['id'] ?>)"><span class="material-symbols-outlined text-[18px]">edit</span></button>
+<button class="p-1 hover:bg-tertiary-container/10 rounded text-tertiary transition-colors" title="Reset Password" onclick="openPasswordModal(<?= $emp['id'] ?>, '<?= htmlspecialchars(addslashes($emp['name'])) ?>')"><span class="material-symbols-outlined text-[18px]">lock_reset</span></button>
+<button class="p-1 hover:bg-error-container/20 rounded text-error transition-colors" title="Delete" onclick="confirmDelete(<?= $emp['id'] ?>, '<?= htmlspecialchars(addslashes($emp['name'])) ?>')"><span class="material-symbols-outlined text-[18px]">delete</span></button>
 </div>
 </td>
 </tr>
-<!-- Row 2 -->
-<tr class="zebra-row hover-row border-b border-surface-container transition-colors">
-<td class="px-lg py-md font-data-mono text-data-mono">YGN-0043</td>
-<td class="px-lg py-md">
-<div class="flex items-center gap-sm">
-<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden">
-<img src="https://i.pinimg.com/736x/16/a0/34/16a034c977760cd8185e279393265d3a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
-</div>
-<span class="font-semibold">Sara</span>
-</div>
-</td>
-<td class="px-lg py-md">Infrastructure & Network Operations</td>
-<td class="px-lg py-md text-on-surface-variant">Cloud Engineer</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center gap-base px-2 py-1 rounded-full bg-tertiary-fixed text-on-tertiary-fixed-variant text-[11px] font-bold">
-<span class="w-2 h-2 rounded-full bg-tertiary"></span> On Leave
-                                        </span>
-</td>
-<td class="px-lg py-md text-on-surface-variant">s@gmail.com</td>
-<td class="px-lg py-md text-right">
-<div class="flex justify-end gap-xs">
-<button class="p-1 hover:bg-primary-container/10 rounded text-primary transition-colors" title="Edit Profile"><span class="material-symbols-outlined text-[18px]">edit</span></button>
-<button class="p-1 hover:bg-tertiary-container/10 rounded text-tertiary transition-colors" title="Reset Password"><span class="material-symbols-outlined text-[18px]">lock_reset</span></button>
-<button class="p-1 hover:bg-error-container/20 rounded text-error transition-colors" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
-</div>
-</td>
-</tr>
-<!-- Row 3 -->
-<tr class="zebra-row hover-row border-b border-surface-container transition-colors">
-<td class="px-lg py-md font-data-mono text-data-mono">YGN-1001</td>
-<td class="px-lg py-md">
-<div class="flex items-center gap-sm">
-<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden">
-<img src="https://i.pinimg.com/736x/b2/22/c9/b222c9b29c5ca95e739e45072f04f715.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
-</div>
-<span class="font-semibold">Alina</span>
-</div>
-</td>
-<td class="px-lg py-md"> Cyber Security</td>
-<td class="px-lg py-md text-on-surface-variant">Security Architect</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center gap-base px-2 py-1 rounded-full bg-secondary-container text-on-secondary-container text-[11px] font-bold">
-<span class="w-2 h-2 rounded-full bg-secondary"></span> Active
-                                        </span>
-</td>
-<td class="px-lg py-md text-on-surface-variant">Alina@gmail.com</td>
-<td class="px-lg py-md text-right">
-<div class="flex justify-end gap-xs">
-<button class="p-1 hover:bg-primary-container/10 rounded text-primary transition-colors" title="Edit Profile"><span class="material-symbols-outlined text-[18px]">edit</span></button>
-<button class="p-1 hover:bg-tertiary-container/10 rounded text-tertiary transition-colors" title="Reset Password"><span class="material-symbols-outlined text-[18px]">lock_reset</span></button>
-<button class="p-1 hover:bg-error-container/20 rounded text-error transition-colors" title="Delete"><span class="material-symbols-outlined text-[18px]">delete</span></button>
-</div>
-</td>
-</tr>
-<!-- Row 4 -->
+<?php endforeach; ?>
+<?php else: ?>
+<tr><td class="px-lg py-md text-on-surface-variant" colspan="7">No employees found.</td></tr>
+<?php endif; ?>
 
 </tbody>
 </table>
 </div>
 <!-- Pagination Footer -->
 <div class="p-lg bg-surface-container-lowest border-t border-outline-variant flex justify-between items-center">
-<span class="text-body-sm text-on-surface-variant">Showing 1-4 of 1,200 employees</span>
+<span class="text-body-sm text-on-surface-variant">Showing <?= count($employees) ?> of <?= number_format($totalEmployees) ?> employees</span>
 <div class="flex gap-xs">
-<button class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm disabled:opacity-30" disabled="">Previous</button>
-<button class="px-3 py-1 bg-secondary text-on-secondary rounded text-body-sm font-bold">1</button>
-<button class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm">2</button>
-<button class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm">3</button>
-<button class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm">Next</button>
+<?php if ($page > 1): ?>
+<a class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm" href="employee_management.php?page=<?= $page - 1 ?>&sort=<?= strtolower($sort) ?>">Previous</a>
+<?php else: ?>
+<button class="px-3 py-1 border border-outline-variant rounded text-body-sm opacity-30" disabled>Previous</button>
+<?php endif; ?>
+<?php for ($i = 1; $i <= $totalPages; $i++): ?>
+<a class="px-3 py-1 rounded text-body-sm <?= $i === $page ? 'bg-secondary text-on-secondary font-bold' : 'border border-outline-variant hover:bg-surface-container transition-colors' ?>" href="employee_management.php?page=<?= $i ?>&sort=<?= strtolower($sort) ?>"><?= $i ?></a>
+<?php endfor; ?>
+<?php if ($page < $totalPages): ?>
+<a class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm" href="employee_management.php?page=<?= $page + 1 ?>&sort=<?= strtolower($sort) ?>">Next</a>
+<?php else: ?>
+<button class="px-3 py-1 border border-outline-variant rounded text-body-sm opacity-30" disabled>Next</button>
+<?php endif; ?>
 </div>
 </div>
 </div>
@@ -342,71 +502,234 @@
 </button>
 </div>
 <!-- Modal Body -->
-<form class="p-lg grid grid-cols-1 md:grid-cols-2 gap-lg">
+<form class="p-lg grid grid-cols-1 md:grid-cols-2 gap-lg" method="post" action="employee_management.php">
+<input type="hidden" name="save_employee" value="1" />
 <div class="space-y-base col-span-2 md:col-span-1">
 <label class="font-label-caps text-label-caps text-on-surface-variant">Full Name</label>
-<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" placeholder="e.g. John Doe" type="text"/>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="name" placeholder="e.g. John Doe" type="text" required/>
 </div>
 <div class="space-y-base col-span-2 md:col-span-1">
 <label class="font-label-caps text-label-caps text-on-surface-variant">Email Address</label>
-<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" placeholder="john.doe@company.com" type="email"/>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="email" placeholder="john.doe@company.com" type="email" required/>
 </div>
 <div class="space-y-base">
 <label class="font-label-caps text-label-caps text-on-surface-variant">Department</label>
-<select class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary">
-<option>Engineering</option>
-<option>Marketing</option>
-<option>Sales</option>
-<option>HR</option>
-<option>Design</option>
+<select class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="department_id" required>
+<option value="">Select Department</option>
+<?php foreach ($departments as $dept): ?>
+<option value="<?= (int) $dept['id'] ?>"><?= htmlspecialchars($dept['name']) ?></option>
+<?php endforeach; ?>
 </select>
 </div>
 <div class="space-y-base">
 <label class="font-label-caps text-label-caps text-on-surface-variant">Position</label>
-<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" placeholder="e.g. Lead Developer" type="text"/>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="position" placeholder="e.g. Lead Developer" type="text"/>
 </div>
 <div class="space-y-base">
 <label class="font-label-caps text-label-caps text-on-surface-variant">Employment Type</label>
 <div class="flex gap-md mt-base">
 <label class="flex items-center gap-xs cursor-pointer">
-<input checked="" class="text-secondary focus:ring-secondary" name="emp_type" type="radio"/>
+<input checked="" class="text-secondary focus:ring-secondary" name="employment_type" type="radio" value="Full-time"/>
 <span class="text-body-sm">Full-time</span>
 </label>
 <label class="flex items-center gap-xs cursor-pointer">
-<input class="text-secondary focus:ring-secondary" name="emp_type" type="radio"/>
+<input class="text-secondary focus:ring-secondary" name="employment_type" type="radio" value="Contract"/>
 <span class="text-body-sm">Contract</span>
 </label>
 </div>
 </div>
-<div class="space-y-base">
-<label class="font-label-caps text-label-caps text-on-surface-variant">Joining Date</label>
-<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" type="date"/>
+<div class="flex items-end col-span-2">
+<button type="submit" class="bg-secondary text-on-secondary px-xl py-2 rounded-lg hover:opacity-90 transition-opacity font-label-caps text-label-caps">Save Employee</button>
 </div>
 </form>
-<!-- Modal Footer -->
-<div class="p-lg bg-surface-container-low flex justify-end gap-md">
-<button class="px-lg py-2 rounded-lg text-primary hover:bg-surface-container-high transition-colors font-label-caps text-label-caps" onclick="document.getElementById('modal-overlay').classList.add('hidden')">Cancel</button>
-<button class="bg-secondary text-on-secondary px-xl py-2 rounded-lg hover:opacity-90 transition-opacity font-label-caps text-label-caps">Save Employee</button>
 </div>
+</div>
+<!-- Password Reset Modal -->
+<div class="hidden fixed inset-0 bg-primary/40 backdrop-blur-sm z-[110] flex items-center justify-center p-md" id="password-modal">
+<div class="bg-surface-container-lowest w-full max-w-md rounded-xl shadow-xl overflow-hidden">
+<div class="bg-primary p-lg text-on-primary flex justify-between items-center">
+<div>
+<h3 class="font-headline-sm text-headline-sm">Reset Password</h3>
+<p class="text-on-primary-container text-body-sm" id="password-employee-name">Employee</p>
+</div>
+<button class="hover:bg-primary-container p-2 rounded-full transition-colors" onclick="document.getElementById('password-modal').classList.add('hidden')"><span class="material-symbols-outlined">close</span></button>
+</div>
+<form class="p-lg space-y-lg" method="post" action="employee_management.php">
+<input type="hidden" name="reset_employee_password" value="1" />
+<input type="hidden" name="employee_id" id="password-employee-id" value="0" />
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">New Password</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="new_password" type="password" required minlength="4"/>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Confirm Password</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="confirm_password" type="password" required/>
+</div>
+<div class="flex justify-end gap-md pt-md">
+<button type="button" class="px-lg py-2 rounded-lg text-primary hover:bg-surface-container-high transition-colors font-label-caps text-label-caps" onclick="document.getElementById('password-modal').classList.add('hidden')">Cancel</button>
+<button type="submit" class="bg-secondary text-on-secondary px-xl py-2 rounded-lg hover:opacity-90 transition-opacity font-label-caps text-label-caps">Reset Password</button>
+</div>
+</form>
+</div>
+</div>
+<!-- Delete Confirmation Modal -->
+<div class="hidden fixed inset-0 bg-primary/40 backdrop-blur-sm z-[120] flex items-center justify-center p-md" id="delete-modal">
+<div class="bg-surface-container-lowest w-full max-w-sm rounded-xl shadow-xl overflow-hidden">
+<div class="bg-error p-lg text-on-error flex justify-between items-center">
+<div>
+<h3 class="font-headline-sm text-headline-sm">Delete Employee</h3>
+<p class="text-error-container text-body-sm" id="delete-employee-name">Employee</p>
+</div>
+<button class="hover:bg-error-container/30 p-2 rounded-full transition-colors" onclick="document.getElementById('delete-modal').classList.add('hidden')"><span class="material-symbols-outlined">close</span></button>
+</div>
+<form class="p-lg space-y-lg" method="post" action="employee_management.php">
+<input type="hidden" name="delete_employee" value="1" />
+<input type="hidden" name="employee_id" id="delete-employee-id" value="0" />
+<p class="text-body-md text-on-surface-variant">Are you sure you want to delete this employee? This action cannot be undone.</p>
+<div class="flex justify-end gap-md pt-md">
+<button type="button" class="px-lg py-2 rounded-lg text-primary hover:bg-surface-container-high transition-colors font-label-caps text-label-caps" onclick="document.getElementById('delete-modal').classList.add('hidden')">Cancel</button>
+<button type="submit" class="bg-error text-on-error px-xl py-2 rounded-lg hover:opacity-90 transition-opacity font-label-caps text-label-caps">Delete</button>
+</div>
+</form>
+</div>
+</div>
+<!-- Edit Employee Modal -->
+<div class="hidden fixed inset-0 bg-primary/40 backdrop-blur-sm z-[130] flex items-center justify-center p-md" id="edit-modal">
+<div class="bg-surface-container-lowest w-full max-w-2xl rounded-xl shadow-xl overflow-hidden">
+<div class="bg-primary p-lg text-on-primary flex justify-between items-center">
+<div>
+<h3 class="font-headline-sm text-headline-sm">Edit Employee</h3>
+<p class="text-on-primary-container text-body-sm">Update employee details</p>
+</div>
+<button class="hover:bg-primary-container p-2 rounded-full transition-colors" onclick="document.getElementById('edit-modal').classList.add('hidden')">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<form class="p-lg grid grid-cols-1 md:grid-cols-2 gap-lg" method="post" action="employee_management.php">
+<input type="hidden" name="update_employee" value="1" />
+<input type="hidden" name="employee_id" id="edit-employee-id" value="0" />
+<div class="space-y-base col-span-2 md:col-span-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Full Name</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="name" id="edit-name" type="text" required/>
+</div>
+<div class="space-y-base col-span-2 md:col-span-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Email Address</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="email" id="edit-email" type="email" required/>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Department</label>
+<select class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="department_id" id="edit-department-id" required>
+<option value="">Select Department</option>
+<?php foreach ($departments as $dept): ?>
+<option value="<?= (int) $dept['id'] ?>"><?= htmlspecialchars($dept['name']) ?></option>
+<?php endforeach; ?>
+</select>
+</div>
+<div class="space-y-base">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Position</label>
+<input class="w-full border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary" name="position" id="edit-position" type="text"/>
+</div>
+<div class="flex items-end col-span-2">
+<button type="submit" class="bg-secondary text-on-secondary px-xl py-2 rounded-lg hover:opacity-90 transition-opacity font-label-caps text-label-caps">Update Employee</button>
+</div>
+</form>
 </div>
 </div>
 <script>
+        function confirmDelete(id, name) {
+            document.getElementById('delete-employee-id').value = id;
+            document.getElementById('delete-employee-name').textContent = 'Delete employee: ' + name;
+            document.getElementById('delete-modal').classList.remove('hidden');
+        }
+
+        function openEditModal(id) {
+            fetch('employee_management.php?ajax_employee=' + id)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) { alert(data.error); return; }
+                    document.getElementById('edit-employee-id').value = data.id;
+                    document.getElementById('edit-name').value = data.name;
+                    document.getElementById('edit-email').value = data.email;
+                    document.getElementById('edit-department-id').value = data.department_id;
+                    document.getElementById('edit-position').value = data.position || '';
+                    document.getElementById('edit-modal').classList.remove('hidden');
+                })
+                .catch(() => alert('Could not load employee data.'));
+        }
+
+        function openPasswordModal(id, name) {
+            document.getElementById('password-employee-id').value = id;
+            document.getElementById('password-employee-name').textContent = 'Resetting password for: ' + name;
+            document.getElementById('password-modal').classList.remove('hidden');
+        }
+
         // Simple search interaction mockup
         const searchInput = document.querySelector('input[type="text"]');
-        searchInput.addEventListener('input', (e) => {
-            const term = e.target.value.toLowerCase();
-            const rows = document.querySelectorAll('.zebra-row');
-            rows.forEach(row => {
-                const text = row.innerText.toLowerCase();
-                row.style.display = text.includes(term) ? '' : 'none';
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                const rows = document.querySelectorAll('.zebra-row');
+                rows.forEach(row => {
+                    const text = row.innerText.toLowerCase();
+                    row.style.display = text.includes(term) ? '' : 'none';
+                });
             });
-        });
+        }
 
-        // Close modal on escape key
+        // Auto-dismiss success message after 4s
+        const msg = document.getElementById('success-message');
+        if (msg) setTimeout(() => { msg.style.transition = 'opacity 0.5s'; msg.style.opacity = '0'; setTimeout(() => msg.remove(), 500); }, 4000);
+
+        // Close modals on escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 document.getElementById('modal-overlay').classList.add('hidden');
+                document.getElementById('password-modal').classList.add('hidden');
+                document.getElementById('delete-modal').classList.add('hidden');
+                document.getElementById('edit-modal').classList.add('hidden');
             }
         });
     </script>
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main') || document.querySelector('[class*="ml-["]');
+    const header = document.querySelector('header');
+    const isOpen = sidebar.classList.contains('translate-x-0');
+    if (isOpen) {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (overlay) overlay.classList.add('hidden');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.width = '100%';
+    } else {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (overlay) overlay.classList.remove('hidden');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.width = '';
+    }
+}
+function setSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main') || document.querySelector('[class*="ml-["]');
+    const header = document.querySelector('header');
+    if (window.innerWidth >= 768) {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.width = '';
+    } else {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.width = '100%';
+    }
+    if (overlay) overlay.classList.add('hidden');
+}
+setSidebarState();
+window.addEventListener('resize', setSidebarState);
+</script>
 </body></html>

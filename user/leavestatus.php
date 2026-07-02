@@ -1,3 +1,43 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/db.php';
+
+$userId = (int) ($_SESSION['user_id'] ?? 0);
+$userName = $_SESSION['user_name'] ?? 'User';
+$userRole = $_SESSION['user_role'] ?? '';
+
+if ($userId <= 0) {
+    header('Location: ../auth/login.php');
+    exit;
+}
+
+$hasLeaveType = $conn->query("SHOW COLUMNS FROM leave_requests LIKE 'leave_type'")->num_rows > 0;
+$typeField = $hasLeaveType ? 'lr.leave_type' : "'Leave'";
+$leaveRequests = [];
+$pendingCount = 0;
+$approvedCount = 0;
+$rejectedCount = 0;
+
+$lrRes = $conn->query("SELECT $typeField AS leave_type, lr.start_date, lr.end_date, lr.reason, lr.status, lr.start_date AS applied_on, DATEDIFF(lr.end_date, lr.start_date) + 1 AS total_days FROM leave_requests lr WHERE lr.user_id = $userId ORDER BY lr.id DESC LIMIT 50");
+if ($lrRes && $lrRes->num_rows > 0) {
+    while ($row = $lrRes->fetch_assoc()) {
+        $leaveRequests[] = $row;
+        $s = strtolower($row['status'] ?? '');
+        if ($s === 'pending') $pendingCount++;
+        elseif ($s === 'approved') $approvedCount++;
+        elseif ($s === 'rejected') $rejectedCount++;
+    }
+}
+$totalEntries = count($leaveRequests);
+
+$empProfile = [];
+$profRes = $conn->query("SELECT position, avatar FROM employee_profiles WHERE user_id = $userId");
+if ($profRes && $profRes->num_rows > 0) {
+    $empProfile = $profRes->fetch_assoc();
+}
+$empPosition = $empProfile['position'] ?? 'Employee';
+$empAvatar = $empProfile['avatar'] ?? '';
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en"><head>
@@ -111,8 +151,9 @@
     </style>
 </head>
 <body class="text-on-surface bg-background">
+<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 <!-- Predicted SideNavBar Component -->
-<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide">
+<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide -translate-x-full transition-transform duration-300">
 <div class="px-md mb-xl">
 
 <h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Smart Attendence</h1>
@@ -146,18 +187,18 @@
 <span class="material-symbols-outlined">lock</span>
 <span class="font-label-caps text-label-caps">Change Password</span>
 </a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="userdashboard.php">
+<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="../auth/logout.php">
 <span class="material-symbols-outlined" data-icon="logout">logout</span>
 <span class="font-label-caps text-label-caps">Logout</span>
 </a>
 </div>
 </aside>
 <!-- Main Content Area -->
-<main class="ml-sidebar-width flex-1 flex flex-col min-h-0 bg-background">
+<main class="md:ml-sidebar-width flex-1 flex flex-col min-h-0 bg-background">
 <!-- TopNavBar (Authority: JSON) -->
 <header class="flex justify-between items-center px-lg py-md bg-surface border-b border-outline-variant transition-colors duration-150 sticky top-0 z-40">
 <div class="flex items-center gap-md">
-<button class="md:hidden text-primary">
+<button onclick="toggleSidebar()" class="text-primary">
 <span class="material-symbols-outlined">menu</span>
 </button>
 <span class="font-headline-sm text-headline-sm text-primary font-bold">HR Connect</span>
@@ -170,19 +211,14 @@
 </div>
 <!-- Actions Area -->
 <div class="flex items-center gap-md">
-<button class="bg-primary text-on-primary px-lg py-sm rounded-lg font-body-md font-bold hover:opacity-90 transition-opacity">
-                            Check In/Out
-                        </button>
-<button class="text-on-surface-variant hover:text-primary transition-colors">
-<span class="material-symbols-outlined">settings</span>
-</button>
+
 <!-- Profile -->
 <div class="flex items-center gap-sm border-l border-outline-variant pl-lg ml-sm">
 <div class="text-right hidden sm:block">
-<p class="font-body-md font-bold text-primary">Kay Ko</p>
-<p class="text-body-sm text-on-surface-variant">Employee</p>
+<p class="font-body-md font-bold text-primary"><?= htmlspecialchars($userName) ?></p>
+<p class="text-body-sm text-on-surface-variant"><?= htmlspecialchars($empPosition) ?></p>
 </div>
-<img src="" alt="">
+<img src="<?= $empAvatar ? '../uploads/avatars/' . htmlspecialchars($empAvatar) : 'https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg' ?>" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant object-cover" alt="">
 </div>
 </div>
 </div>
@@ -195,19 +231,19 @@
 <h2 class="font-display-lg text-display-lg text-primary">Leave Status</h2>
 <p class="text-on-surface-variant font-body-md">Track your leave requests and their current status</p>
 </div>
-<button class="inline-flex items-center justify-center gap-xs px-xl py-md bg-primary text-on-primary rounded-lg font-headline-sm hover:bg-primary-container transition-colors shadow-sm">
+<a href="leaveform.php" class="inline-flex items-center justify-center gap-xs px-xl py-md bg-primary text-on-primary rounded-lg font-headline-sm hover:bg-primary-container transition-colors shadow-sm">
 <span class="material-symbols-outlined">add</span>
                         New Leave Request
-                    </button>
+                    </a>
 </div>
 <!-- Table Container (Level 1 Surface) -->
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
 <!-- Filter Tabs -->
 <div class="flex border-b border-outline-variant px-lg overflow-x-auto whitespace-nowrap scrollbar-hide">
-<button class="px-xl py-lg text-body-md font-bold text-primary border-b-2 border-primary transition-colors">All</button>
-<button class="px-xl py-lg text-body-md font-medium text-on-surface-variant hover:text-primary transition-colors">Pending</button>
-<button class="px-xl py-lg text-body-md font-medium text-on-surface-variant hover:text-primary transition-colors">Approved</button>
-<button class="px-xl py-lg text-body-md font-medium text-on-surface-variant hover:text-primary transition-colors">Rejected</button>
+<button class="px-xl py-lg text-body-md font-bold text-primary border-b-2 border-primary transition-colors">All (<?= $totalEntries ?>)</button>
+<button class="px-xl py-lg text-body-md font-medium text-on-surface-variant hover:text-primary transition-colors">Pending (<?= $pendingCount ?>)</button>
+<button class="px-xl py-lg text-body-md font-medium text-on-surface-variant hover:text-primary transition-colors">Approved (<?= $approvedCount ?>)</button>
+<button class="px-xl py-lg text-body-md font-medium text-on-surface-variant hover:text-primary transition-colors">Rejected (<?= $rejectedCount ?>)</button>
 </div>
 <!-- Data Table -->
 <div class="overflow-x-auto min-w-full">
@@ -223,129 +259,51 @@
 </tr>
 </thead>
 <tbody class="divide-y divide-outline-variant">
-<!-- Row 1 -->
-<tr class="hover:bg-secondary-container/10 transition-colors group">
-<td class="px-lg py-md font-body-md font-bold text-primary">Annual Leave</td>
+<?php if (!empty($leaveRequests)): ?>
+<?php foreach ($leaveRequests as $i => $lr): ?>
+<?php
+$s = strtolower($lr['status'] ?? 'pending');
+$badgeClass = match($s) {
+    'approved' => 'bg-secondary-fixed text-on-secondary-fixed-variant',
+    'rejected' => 'bg-error-container text-on-error-container',
+    'pending' => 'bg-tertiary-fixed text-on-tertiary-fixed-variant',
+    default => 'bg-surface-container-high text-on-surface-variant',
+};
+$start = date('j M Y', strtotime($lr['start_date']));
+$end = $lr['end_date'] ? date('j M Y', strtotime($lr['end_date'])) : null;
+$applied = date('j M Y', strtotime($lr['applied_on'] ?? $lr['start_date']));
+$td = (int) ($lr['total_days'] ?? 1);
+$rowClass = $i % 2 === 1 ? 'bg-surface-container-low/30' : '';
+?>
+<tr class="hover:bg-secondary-container/10 transition-colors group <?= $rowClass ?>">
+<td class="px-lg py-md font-body-md font-bold text-primary"><?= htmlspecialchars($lr['leave_type'] ?? 'Leave') ?></td>
 <td class="px-lg py-md">
 <div class="flex flex-col">
-<span class="text-body-sm font-medium">20 Jun 2024 -</span>
-<span class="text-body-sm font-medium">22 Jun 2024</span>
+<span class="text-body-sm font-medium"><?= htmlspecialchars($start) ?><?= $end ? ' -' : '' ?></span>
+<?php if ($end): ?><span class="text-body-sm font-medium"><?= htmlspecialchars($end) ?></span><?php endif; ?>
 </div>
 </td>
-<td class="px-lg py-md text-data-mono">3</td>
-<td class="px-lg py-md max-w-xs truncate text-on-surface-variant">Family vacation and personal work.</td>
+<td class="px-lg py-md text-data-mono"><?= $td ?></td>
+<td class="px-lg py-md max-w-xs truncate text-on-surface-variant"><?= htmlspecialchars($lr['reason'] ?? '') ?></td>
 <td class="px-lg py-md">
-<span class="inline-flex items-center px-sm py-base rounded-full bg-secondary-fixed text-on-secondary-fixed-variant text-label-caps">Approved</span>
+<span class="inline-flex items-center px-sm py-base rounded-full <?= $badgeClass ?> text-label-caps"><?= htmlspecialchars(ucfirst($lr['status'] ?? 'Pending')) ?></span>
 </td>
-<td class="px-lg py-md text-on-surface-variant">18 Jun 2024</td>
+<td class="px-lg py-md text-on-surface-variant"><?= htmlspecialchars($applied) ?></td>
 <td class="px-lg py-md text-right">
 <button class="text-primary hover:text-secondary p-xs rounded transition-colors" title="View Details">
 </button>
 </td>
 </tr>
-<!-- Row 2 -->
-<tr class="hover:bg-secondary-container/10 transition-colors group bg-surface-container-low/30">
-<td class="px-lg py-md font-body-md font-bold text-primary">Sick Leave</td>
-<td class="px-lg py-md">
-<div class="flex flex-col">
-<span class="text-body-sm font-medium">10 Jun 2024</span>
-</div>
-</td>
-<td class="px-lg py-md text-data-mono">1</td>
-<td class="px-lg py-md max-w-xs truncate text-on-surface-variant">Fever and cold</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center px-sm py-base rounded-full bg-secondary-fixed text-on-secondary-fixed-variant text-label-caps">Approved</span>
-</td>
-<td class="px-lg py-md text-on-surface-variant">09 Jun 2024</td>
-<td class="px-lg py-md text-right">
-<button class="text-primary hover:text-secondary p-xs rounded transition-colors" title="View Details">
-</button>
-</td>
-</tr>
-<!-- Row 3 -->
-<tr class="hover:bg-secondary-container/10 transition-colors group">
-<td class="px-lg py-md font-body-md font-bold text-primary">Casual Leave</td>
-<td class="px-lg py-md">
-<div class="flex flex-col">
-<span class="text-body-sm font-medium">05 Jun 2024</span>
-</div>
-</td>
-<td class="px-lg py-md text-data-mono">1</td>
-<td class="px-lg py-md max-w-xs truncate text-on-surface-variant">Personal work</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center px-sm py-base rounded-full bg-error-container text-on-error-container text-label-caps">Rejected</span>
-</td>
-<td class="px-lg py-md text-on-surface-variant">04 Jun 2024</td>
-<td class="px-lg py-md text-right">
-<button class="text-primary hover:text-secondary p-xs rounded transition-colors" title="View Details">
-</button>
-</td>
-</tr>
-<!-- Row 4 -->
-<tr class="hover:bg-secondary-container/10 transition-colors group bg-surface-container-low/30">
-<td class="px-lg py-md font-body-md font-bold text-primary">Annual Leave</td>
-<td class="px-lg py-md">
-<div class="flex flex-col">
-<span class="text-body-sm font-medium">01 May 2024 -</span>
-<span class="text-body-sm font-medium">03 May 2024</span>
-</div>
-</td>
-<td class="px-lg py-md text-data-mono">3</td>
-<td class="px-lg py-md max-w-xs truncate text-on-surface-variant">Family event</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center px-sm py-base rounded-full bg-secondary-fixed text-on-secondary-fixed-variant text-label-caps">Approved</span>
-</td>
-<td class="px-lg py-md text-on-surface-variant">25 Apr 2024</td>
-<td class="px-lg py-md text-right">
-<button class="text-primary hover:text-secondary p-xs rounded transition-colors" title="View Details">
-</button>
-</td>
-</tr>
-<!-- Row 5 -->
-<tr class="hover:bg-secondary-container/10 transition-colors group">
-<td class="px-lg py-md font-body-md font-bold text-primary">Sick Leave</td>
-<td class="px-lg py-md">
-<div class="flex flex-col">
-<span class="text-body-sm font-medium">15 Apr 2024</span>
-</div>
-</td>
-<td class="px-lg py-md text-data-mono">1</td>
-<td class="px-lg py-md max-w-xs truncate text-on-surface-variant">Not feeling well</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center px-sm py-base rounded-full bg-error-container text-on-error-container text-label-caps">Rejected</span>
-</td>
-<td class="px-lg py-md text-on-surface-variant">14 Apr 2024</td>
-<td class="px-lg py-md text-right">
-<button class="text-primary hover:text-secondary p-xs rounded transition-colors" title="View Details">
-</button>
-</td>
-</tr>
-<!-- Row 6 -->
-<tr class="hover:bg-secondary-container/10 transition-colors group bg-surface-container-low/30">
-<td class="px-lg py-md font-body-md font-bold text-primary">Casual Leave</td>
-<td class="px-lg py-md">
-<div class="flex flex-col">
-<span class="text-body-sm font-medium">08 Apr 2024</span>
-</div>
-</td>
-<td class="px-lg py-md text-data-mono">1</td>
-<td class="px-lg py-md max-w-xs truncate text-on-surface-variant">Personal work</td>
-<td class="px-lg py-md">
-<span class="inline-flex items-center px-sm py-base rounded-full bg-tertiary-fixed text-on-tertiary-fixed-variant text-label-caps">Pending</span>
-</td>
-<td class="px-lg py-md text-on-surface-variant">07 Apr 2024</td>
-<td class="px-lg py-md text-right">
-<button class="text-primary hover:text-secondary p-xs rounded transition-colors" title="View Details">
-
-</button>
-</td>
-</tr>
+<?php endforeach; ?>
+<?php else: ?>
+<tr><td class="px-lg py-md text-on-surface-variant" colspan="7">No leave requests found.</td></tr>
+<?php endif; ?>
 </tbody>
 </table>
 </div>
 <!-- Pagination Footer -->
 <div class="px-lg py-md border-t border-outline-variant flex flex-col sm:flex-row items-center justify-between gap-md bg-surface-container-low/10">
-<p class="text-body-sm text-on-surface-variant">Showing 1 to 6 of 6 entries</p>
+<p class="text-body-sm text-on-surface-variant">Showing <?= $totalEntries ?> <?= $totalEntries === 1 ? 'entry' : 'entries' ?></p>
 <div class="flex items-center gap-xs">
 <button class="w-8 h-8 flex items-center justify-center rounded border border-outline-variant hover:bg-surface-container transition-colors disabled:opacity-50" disabled="">
 <span class="material-symbols-outlined text-body-sm">chevron_left</span>
@@ -379,4 +337,40 @@
             // Ripple effect logic could be added here for buttons
         });
     </script>
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const isOpen = sidebar.classList.contains('translate-x-0');
+    if (isOpen) {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (overlay) overlay.classList.add('hidden');
+        if (main) main.style.marginLeft = '0';
+    } else {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (overlay) overlay.classList.remove('hidden');
+        if (main) main.style.marginLeft = '';
+    }
+}
+function setSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    if (window.innerWidth >= 768) {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (main) main.style.marginLeft = '';
+    } else {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (main) main.style.marginLeft = '0';
+    }
+    if (overlay) overlay.classList.add('hidden');
+}
+setSidebarState();
+window.addEventListener('resize', setSidebarState);
+</script>
 </body></html>

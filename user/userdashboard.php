@@ -1,3 +1,74 @@
+<?php
+session_start();
+require_once __DIR__ . '/../config/db.php';
+
+$userId = (int) ($_SESSION['user_id'] ?? 0);
+$userName = $_SESSION['user_name'] ?? 'User';
+$userRole = $_SESSION['user_role'] ?? '';
+
+if ($userId <= 0) {
+    header('Location: ../auth/login.php');
+    exit;
+}
+
+$currentMonth = date('m');
+$currentYear = date('Y');
+$today = date('Y-m-d');
+
+$presentDays = 0;
+$leaveDays = 0;
+$lateDays = 0;
+$workingDays = 0;
+$todayAttendance = null;
+$notifications = [];
+$calendarRecords = [];
+$leaveRecords = [];
+
+$presentRes = $conn->query("SELECT COUNT(*) FROM attendance WHERE user_id = $userId AND LOWER(status) = 'present' AND MONTH(date) = $currentMonth AND YEAR(date) = $currentYear");
+if ($presentRes) $presentDays = (int) $presentRes->fetch_row()[0];
+
+$leaveRes = $conn->query("SELECT COUNT(*) FROM leave_requests WHERE user_id = $userId AND LOWER(status) = 'approved' AND MONTH(start_date) = $currentMonth AND YEAR(start_date) = $currentYear");
+if ($leaveRes) $leaveDays = (int) $leaveRes->fetch_row()[0];
+
+$lateRes = $conn->query("SELECT COUNT(*) FROM attendance WHERE user_id = $userId AND LOWER(status) = 'late' AND MONTH(date) = $currentMonth AND YEAR(date) = $currentYear");
+if ($lateRes) $lateDays = (int) $lateRes->fetch_row()[0];
+
+$workRes = $conn->query("SELECT COUNT(*) FROM attendance WHERE user_id = $userId AND LOWER(status) IN ('present','late') AND MONTH(date) = $currentMonth AND YEAR(date) = $currentYear");
+if ($workRes) $workingDays = (int) $workRes->fetch_row()[0];
+
+$userInfo = $conn->query("SELECT u.name, ep.position, ep.avatar FROM `user` u LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.id = $userId");
+$uData = $userInfo ? $userInfo->fetch_assoc() : null;
+$dbName = $uData['name'] ?? $userName;
+$dbPosition = $uData['position'] ?? 'Employee';
+$empAvatar = $uData['avatar'] ?? '';
+
+$todayAttRes = $conn->query("SELECT check_in, check_out, status FROM attendance WHERE user_id = $userId AND date = '$today' LIMIT 1");
+if ($todayAttRes && $todayAttRes->num_rows > 0) {
+    $todayAttendance = $todayAttRes->fetch_assoc();
+}
+
+$notifRes = $conn->query("SELECT title, message, created_at, type FROM notifications WHERE user_id = $userId OR user_id = 0 ORDER BY created_at DESC LIMIT 5");
+if ($notifRes && $notifRes->num_rows > 0) {
+    while ($row = $notifRes->fetch_assoc()) {
+        $notifications[] = $row;
+    }
+}
+
+$calRes = $conn->query("SELECT DAY(date) AS day, status FROM attendance WHERE user_id = $userId AND MONTH(date) = $currentMonth AND YEAR(date) = $currentYear");
+if ($calRes && $calRes->num_rows > 0) {
+    while ($row = $calRes->fetch_assoc()) {
+        $calendarRecords[(int) $row['day']] = strtolower($row['status']);
+    }
+}
+
+$leaveRes = $conn->query("SELECT lr.reason, lr.start_date, lr.status FROM leave_requests lr WHERE lr.user_id = $userId ORDER BY lr.start_date DESC LIMIT 5");
+if ($leaveRes && $leaveRes->num_rows > 0) {
+    while ($row = $leaveRes->fetch_assoc()) {
+        $leaveRecords[] = $row;
+    }
+}
+$monthName = date('F Y');
+?>
 <!DOCTYPE html>
 
 <html class="light" lang="en"><head>
@@ -105,11 +176,14 @@
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
         .chart-bar { transition: height 1s ease-in-out; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
+        body { opacity: 0; animation: fadeIn 0.3s ease-in forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
 <body class="text-on-surface bg-background">
+<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 <!-- Predicted SideNavBar Component -->
-<aside class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide">
+<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide -translate-x-full transition-transform duration-300">
 <div class="px-md mb-xl">
 
 <h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Smart Attendence</h1>
@@ -150,13 +224,13 @@
 </div>
 </aside>
 <!-- Top Bar -->
-<header class="fixed top-0 right-0 left-sidebar-width h-20 bg-white border-b border-slate-100 z-40 flex justify-between items-center px-10">
+<header class="fixed top-0 right-0 left-0 md:left-sidebar-width h-20 bg-white border-b border-slate-100 z-40 flex justify-between items-center px-10">
 <div class="flex items-center gap-4">
-<button class="p-2 text-slate-400 hover:bg-slate-50 rounded-lg">
+<button onclick="toggleSidebar()" class="p-2 text-slate-400 hover:bg-slate-50 rounded-lg">
 <span class="material-symbols-outlined">menu</span>
 </button>
 <div>
-<h2 class="text-xl font-bold">Welcome back, Kay 👋</h2>
+<h2 class="text-xl font-bold">Welcome back, <?= htmlspecialchars(explode(' ', $dbName)[0]) ?> 👋</h2>
 <p class="text-xs text-text-muted">Here's what's happening with your attendance today.</p>
 </div>
 </div>
@@ -164,21 +238,21 @@
 <div class="relative">
 <button class="p-2 text-slate-400 hover:bg-slate-50 rounded-full">
 <span class="material-symbols-outlined">notifications</span>
-<span class="absolute top-1 right-1 w-4 h-4 bg-red-500 border-2 border-white rounded-full text-[8px] text-white flex items-center justify-center font-bold">3</span>
+<?php if (count($notifications) > 0): ?><span class="absolute top-1 right-1 w-4 h-4 bg-red-500 border-2 border-white rounded-full text-[8px] text-white flex items-center justify-center font-bold"><?= count($notifications) ?></span><?php endif; ?>
 </button>
 </div>
 <div class="flex items-center gap-3">
 <div class="text-right">
-<p class="text-sm font-bold">Kay Ko</p>
-<p class="text-[10px] text-text-muted uppercase tracking-wider">Employee</p>
+<p class="text-sm font-bold"><?= htmlspecialchars($dbName) ?></p>
+<p class="text-[10px] text-text-muted uppercase tracking-wider"><?= htmlspecialchars($dbPosition) ?></p>
 </div>
-<img src="https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
+<img src="<?= $empAvatar ? '../uploads/avatars/' . htmlspecialchars($empAvatar) : 'https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg' ?>" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant object-cover" alt="">
 <span class="material-symbols-outlined text-slate-400 text-sm">expand_more</span>
 </div>
 </div>
 </header>
 <!-- Main Content -->
-<main class="ml-sidebar-width pt-20 p-10 space-y-8">
+<main class="md:ml-sidebar-width pt-20 p-10 space-y-8">
 <!-- Stats Row -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 <!-- Card 1 -->
@@ -189,7 +263,7 @@
 <div>
 <p class="text-text-muted text-xs font-medium">Total Present</p>
 <div class="flex items-baseline gap-1">
-<span class="text-2xl font-bold">20</span>
+<span class="text-2xl font-bold"><?= $presentDays ?></span>
 <span class="text-sm font-semibold">Days</span>
 </div>
 <p class="text-[10px] text-text-muted mt-1 uppercase">This Month</p>
@@ -203,7 +277,7 @@
 <div>
 <p class="text-text-muted text-xs font-medium">Total Leaves</p>
 <div class="flex items-baseline gap-1">
-<span class="text-2xl font-bold">2</span>
+<span class="text-2xl font-bold"><?= $leaveDays ?></span>
 <span class="text-sm font-semibold">Days</span>
 </div>
 <p class="text-[10px] text-text-muted mt-1 uppercase">This Month</p>
@@ -217,8 +291,8 @@
 <div>
 <p class="text-text-muted text-xs font-medium">Late Arrivals</p>
 <div class="flex items-baseline gap-1">
-<span class="text-2xl font-bold">1</span>
-<span class="text-sm font-semibold">Day</span>
+<span class="text-2xl font-bold"><?= $lateDays ?></span>
+<span class="text-sm font-semibold">Day<?= $lateDays !== 1 ? 's' : '' ?></span>
 </div>
 <p class="text-[10px] text-text-muted mt-1 uppercase">This Month</p>
 </div>
@@ -231,7 +305,7 @@
 <div>
 <p class="text-text-muted text-xs font-medium">Working Days</p>
 <div class="flex items-baseline gap-1">
-<span class="text-2xl font-bold">22</span>
+<span class="text-2xl font-bold"><?= $workingDays ?></span>
 <span class="text-sm font-semibold">Days</span>
 </div>
 <p class="text-[10px] text-text-muted mt-1 uppercase">This Month</p>
@@ -246,28 +320,60 @@
 <h3 class="text-lg font-bold">Today's Attendance</h3>
 <div class="flex items-center gap-2 text-text-muted text-xs bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
 <span class="material-symbols-outlined text-sm">calendar_month</span>
-                    -June 202-, Thursday
+                    <?= date('F j, Y') ?>, <?= date('l') ?>
                 </div>
 </div>
 <div class="flex flex-col md:flex-row items-center gap-12 relative z-10">
 <div class="flex flex-col gap-8 w-full md:w-auto">
 <div>
-<span class="inline-block px-4 py-1.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-lg uppercase tracking-wider mb-6">Present</span>
+<?php
+$attStatus = strtolower($todayAttendance['status'] ?? 'absent');
+$statusColor = match($attStatus) {
+    'present' => 'bg-green-100 text-green-700',
+    'late' => 'bg-orange-100 text-orange-700',
+    'absent' => 'bg-red-100 text-red-700',
+    default => 'bg-slate-100 text-slate-700',
+};
+$dashCheckInRaw = $todayAttendance['check_in'] ?? null;
+$dashCheckOutRaw = $todayAttendance['check_out'] ?? null;
+$dashHasCheckIn = $dashCheckInRaw && $dashCheckInRaw !== '00:00:00';
+$dashHasCheckOut = $dashCheckOutRaw && $dashCheckOutRaw !== '00:00:00';
+// Monthly overtime for dashboard
+$dashOT = 0;
+$dashOTRes = $conn->query("SELECT COALESCE(SUM(hours), 0) AS total_ot FROM overtime WHERE employee_id = $userId AND MONTH(ot_date) = $currentMonth AND YEAR(ot_date) = $currentYear");
+if ($dashOTRes) $dashOT = (float) $dashOTRes->fetch_assoc()['total_ot'];
+?>
+<span class="inline-block px-4 py-1.5 <?= $statusColor ?> text-[10px] font-bold rounded-lg uppercase tracking-wider mb-6"><?= htmlspecialchars(ucfirst($todayAttendance['status'] ?? 'Not marked')) ?></span>
 <div class="flex gap-16">
 <div>
 <p class="text-text-muted text-[10px] font-bold uppercase mb-1">Check-in Time</p>
-<p class="text-2xl font-bold">09:00 AM</p>
+<p class="text-2xl font-bold"><?= htmlspecialchars($dashHasCheckIn ? date('h:i A', strtotime($dashCheckInRaw)) : '-- : --') ?></p>
 </div>
 <div>
 <p class="text-text-muted text-[10px] font-bold uppercase mb-1">Check-out Time</p>
-<p class="text-2xl font-bold text-slate-300">- - : - -</p>
+<p class="text-2xl font-bold <?= $dashHasCheckOut ? '' : 'text-slate-300' ?>"><?= $dashHasCheckOut ? htmlspecialchars(date('h:i A', strtotime($dashCheckOutRaw))) : '- - : - -' ?></p>
 </div>
 </div>
+<?php if ($dashOT > 0): ?>
+<p class="text-xs text-orange-600 font-semibold mt-2">Overtime this month: <?= number_format($dashOT, 1) ?> hrs</p>
+<?php endif; ?>
 </div>
-<button class="bg-accent-blue hover:bg-blue-700 text-white px-10 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-200">
+<?php if (!$dashHasCheckIn): ?>
+<button onclick="dashboardCheckIn()" id="dashCheckinBtn" class="bg-green-600 hover:bg-green-700 text-white px-10 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-200">
+<span class="material-symbols-outlined">login</span>
+                        Check In
+                    </button>
+<?php elseif ($dashHasCheckIn && !$dashHasCheckOut): ?>
+<button onclick="dashboardCheckOut()" id="dashCheckoutBtn" class="bg-accent-blue hover:bg-blue-700 text-white px-10 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-200">
 <span class="material-symbols-outlined">logout</span>
                         Check Out
                     </button>
+<?php else: ?>
+<button disabled class="bg-gray-300 text-gray-500 cursor-not-allowed px-10 py-4 rounded-xl font-bold flex items-center justify-center gap-2">
+<span class="material-symbols-outlined">check_circle</span>
+                        Completed
+                    </button>
+<?php endif; ?>
 </div>
 
 </div>
@@ -279,45 +385,24 @@
 <a class="text-accent-blue text-xs font-semibold hover:underline" href="#">View All</a>
 </div>
 <div class="space-y-4">
-<!-- Notification 1 -->
-<div class="flex gap-4 p-4 rounded-2xl border border-slate-50 hover:bg-slate-50 transition-colors">
-<div class="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center shrink-0">
-<span class="material-symbols-outlined text-green-500">check_circle</span>
-</div>
-<div class="flex-1">
-<div class="flex justify-between items-start">
-<p class="text-sm font-bold">Your leave request has been approved.</p>
-<span class="text-[10px] text-text-muted">10:30 AM</span>
-</div>
-<p class="text-xs text-text-muted mt-1">Annual Leave: 24 Jun 2024</p>
-</div>
-</div>
-<!-- Notification 2 -->
+<?php if (!empty($notifications)): ?>
+<?php foreach ($notifications as $notif): ?>
 <div class="flex gap-4 p-4 rounded-2xl border border-slate-50 hover:bg-slate-50 transition-colors">
 <div class="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center shrink-0">
-<span class="material-symbols-outlined text-blue-500">info</span>
+<span class="material-symbols-outlined text-blue-500"><?= match(strtolower($notif['type'] ?? 'info')) { 'leave', 'leave_request' => 'event_note', 'password_reset' => 'lock', 'attendance' => 'calendar_today', 'broadcast' => 'campaign', default => 'info' } ?></span>
 </div>
 <div class="flex-1">
 <div class="flex justify-between items-start">
-<p class="text-sm font-bold">Don't forget to check-out after work.</p>
-<span class="text-[10px] text-text-muted">Yesterday</span>
+<p class="text-sm font-bold"><?= htmlspecialchars($notif['title']) ?></p>
+<span class="text-[10px] text-text-muted"><?= htmlspecialchars(date('M d, H:i', strtotime($notif['created_at']))) ?></span>
 </div>
-<p class="text-xs text-text-muted mt-1">Ensure to mark your attendance.</p>
-</div>
-</div>
-<!-- Notification 3 -->
-<div class="flex gap-4 p-4 rounded-2xl border border-slate-50 hover:bg-slate-50 transition-colors">
-<div class="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center shrink-0">
-<span class="material-symbols-outlined text-orange-500">warning</span>
-</div>
-<div class="flex-1">
-<div class="flex justify-between items-start">
-<p class="text-sm font-bold">You were late by 15 minutes today.</p>
-<span class="text-[10px] text-text-muted">Yesterday</span>
-</div>
-<p class="text-xs text-text-muted mt-1">Check-in time was 09:15 AM</p>
+<p class="text-xs text-text-muted mt-1"><?= htmlspecialchars($notif['message']) ?></p>
 </div>
 </div>
+<?php endforeach; ?>
+<?php else: ?>
+<p class="text-sm text-text-muted">No new notifications.</p>
+<?php endif; ?>
 </div>
 </div>
 <!-- Attendance Summary (Calendar View) -->
@@ -325,7 +410,7 @@
 <div class="flex justify-between items-center mb-8">
 <h3 class="text-lg font-bold">Attendance Summary</h3>
 <button class="flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium">
-                    June 2024
+                    <?= $monthName ?>
                     <span class="material-symbols-outlined text-sm">expand_more</span>
 </button>
 </div>
@@ -339,79 +424,53 @@
 <span class="text-[10px] font-bold text-text-muted uppercase">Sat</span>
 </div>
 <div class="grid grid-cols-7 gap-y-6 text-center">
-<!-- Sample Calendar Row (Simplified) -->
-<span class="text-slate-300 text-sm">26</span><span class="text-slate-300 text-sm">27</span><span class="text-slate-300 text-sm">28</span><span class="text-slate-300 text-sm">29</span><span class="text-slate-300 text-sm">30</span><span class="text-slate-300 text-sm">31</span><span class="text-sm font-bold">1</span>
-<span class="text-sm font-bold">2</span>
+<?php
+$firstDow = (int) date('w', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
+$totalDays = (int) date('t', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
+$todayDay = (int) date('j');
+for ($i = 0; $i < $firstDow; $i++):
+    $prevMonthDay = (int) date('t', mktime(0, 0, 0, $currentMonth - 1, 1, $currentYear)) - $firstDow + 1 + $i;
+?>
+<span class="text-slate-300 text-sm"><?= $prevMonthDay ?></span>
+<?php endfor; ?>
+<?php for ($d = 1; $d <= $totalDays; $d++):
+    $status = $calendarRecords[$d] ?? null;
+    $isToday = ($d === $todayDay);
+    $dotColor = match($status) {
+        'present' => 'bg-green-500',
+        'late' => 'bg-orange-500',
+        'absent' => 'bg-red-400',
+        default => null,
+    };
+?>
+<?php if ($isToday): ?>
+<div class="flex flex-col items-center justify-center w-8 h-8 bg-blue-500 text-white rounded-full mx-auto">
+<span class="text-sm font-bold"><?= $d ?></span>
+</div>
+<?php elseif ($dotColor): ?>
 <div class="flex flex-col items-center">
-<span class="text-sm font-bold">3</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
+<span class="text-sm font-bold"><?= $d ?></span>
+<span class="w-1.5 h-1.5 <?= $dotColor ?> rounded-full mt-1"></span>
 </div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">4</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">5</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">6</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">7</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<span class="text-sm font-bold">8</span>
-<span class="text-sm font-bold">9</span>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">10</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">11</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">12</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">13</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">14</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">15</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<span class="text-sm font-bold">16</span>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">17</span>
-<span class="w-1.5 h-1.5 bg-status-late rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">18</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center">
-<span class="text-sm font-bold">19</span>
-<span class="w-1.5 h-1.5 bg-status-present rounded-full mt-1"></span>
-</div>
-<div class="flex flex-col items-center justify-center w-8 h-8 bg-accent-blue text-white rounded-full mx-auto">
-<span class="text-sm font-bold">20</span>
-</div>
-<span class="text-sm font-bold">21</span>
-<span class="text-sm font-bold">22</span>
+<?php else: ?>
+<span class="text-sm font-bold"><?= $d ?></span>
+<?php endif; ?>
+<?php endfor; ?>
+<?php
+$remainingCells = 7 - (($firstDow + $totalDays) % 7);
+if ($remainingCells < 7) {
+    for ($i = 1; $i <= $remainingCells; $i++):
+?>
+<span class="text-slate-300 text-sm"><?= $i ?></span>
+<?php endfor;
+}
+?>
 </div>
 <div class="mt-10 flex gap-6 justify-center">
-<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-status-present"></span><span class="text-[10px] text-text-muted font-bold">Present</span></div>
-<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-status-late"></span><span class="text-[10px] text-text-muted font-bold">Late</span></div>
-<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-status-absent"></span><span class="text-[10px] text-text-muted font-bold">Absent</span></div>
-<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-status-leave"></span><span class="text-[10px] text-text-muted font-bold">Leave</span></div>
+<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500"></span><span class="text-[10px] text-text-muted font-bold">Present</span></div>
+<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-orange-500"></span><span class="text-[10px] text-text-muted font-bold">Late</span></div>
+<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-red-400"></span><span class="text-[10px] text-text-muted font-bold">Absent</span></div>
+<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-purple-400"></span><span class="text-[10px] text-text-muted font-bold">Leave</span></div>
 </div>
 </div>
 <!-- Leave Status Table -->
@@ -430,38 +489,112 @@
 </tr>
 </thead>
 <tbody class="divide-y divide-slate-50">
+<?php if (!empty($leaveRecords)): ?>
+<?php foreach ($leaveRecords as $lr): ?>
 <tr>
-<td class="py-4 text-xs font-bold">Annual Leave</td>
-<td class="py-4 text-xs text-text-muted">24 Jun 2024</td>
+<td class="py-4 text-xs font-bold"><?= htmlspecialchars(ucfirst($lr['reason'] ?? 'Leave')) ?></td>
+<td class="py-4 text-xs text-text-muted"><?= htmlspecialchars(date('d M Y', strtotime($lr['start_date']))) ?></td>
 <td class="py-4 text-[10px]">
-<span class="bg-green-50 text-green-600 px-3 py-1 rounded-lg font-bold">Approved</span>
+<?php $ls = strtolower($lr['status']); ?>
+<span class="px-3 py-1 rounded-lg font-bold <?= $ls === 'approved' ? 'bg-green-50 text-green-600' : ($ls === 'rejected' ? 'bg-red-50 text-red-500' : 'bg-orange-50 text-orange-500') ?>"><?= htmlspecialchars(ucfirst($lr['status'] ?? 'Pending')) ?></span>
 </td>
 </tr>
-<tr>
-<td class="py-4 text-xs font-bold">Paid Leave</td>
-<td class="py-4 text-xs text-text-muted">10 Jun 2024</td>
-<td class="py-4 text-[10px]">
-<span class="bg-green-50 text-green-600 px-3 py-1 rounded-lg font-bold">Approved</span>
-</td>
-</tr>
-<tr>
-<td class="py-4 text-xs font-bold">Paid Leave</td>
-<td class="py-4 text-xs text-text-muted">05 Jun 2024</td>
-<td class="py-4 text-[10px]">
-<span class="bg-red-50 text-red-500 px-3 py-1 rounded-lg font-bold">Rejected</span>
-</td>
-</tr>
-<tr>
-<td class="py-4 text-xs font-bold">Annual Leave</td>
-<td class="py-4 text-xs text-text-muted">01 Jun 2024</td>
-<td class="py-4 text-[10px]">
-<span class="bg-orange-50 text-orange-500 px-3 py-1 rounded-lg font-bold">Pending</span>
-</td>
-</tr>
+<?php endforeach; ?>
+<?php else: ?>
+<tr><td class="py-4 text-xs text-text-muted" colspan="3">No leave records yet.</td></tr>
+<?php endif; ?>
 </tbody>
 </table>
 </div>
 </div>
 </div>
 </main>
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    const isOpen = sidebar.classList.contains('translate-x-0');
+    if (isOpen) {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (overlay) overlay.classList.add('hidden');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.left = '0';
+    } else {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (overlay) overlay.classList.remove('hidden');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.left = '';
+    }
+}
+function setSidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const main = document.querySelector('main');
+    const header = document.querySelector('header');
+    if (window.innerWidth >= 768) {
+        sidebar.classList.remove('-translate-x-full');
+        sidebar.classList.add('translate-x-0');
+        if (main) main.style.marginLeft = '';
+        if (header) header.style.left = '';
+    } else {
+        sidebar.classList.remove('translate-x-0');
+        sidebar.classList.add('-translate-x-full');
+        if (main) main.style.marginLeft = '0';
+        if (header) header.style.left = '0';
+    }
+    if (overlay) overlay.classList.add('hidden');
+}
+setSidebarState();
+window.addEventListener('resize', setSidebarState);
+
+async function dashboardCheckIn() {
+    const btn = document.getElementById('dashCheckinBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-symbols-outlined">sync</span> Processing...';
+    try {
+        const form = new FormData();
+        form.append('action', 'checkin');
+        const res = await fetch('attendance_handler.php', { method: 'POST', body: form });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message);
+            btn.disabled = false;
+            btn.innerHTML = '<span class="material-symbols-outlined">login</span> Check In';
+        }
+    } catch (e) {
+        alert('Network error');
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined">login</span> Check In';
+    }
+}
+
+async function dashboardCheckOut() {
+    const btn = document.getElementById('dashCheckoutBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-symbols-outlined">sync</span> Processing...';
+    try {
+        const form = new FormData();
+        form.append('action', 'checkout');
+        const res = await fetch('attendance_handler.php', { method: 'POST', body: form });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message);
+            btn.disabled = false;
+            btn.innerHTML = '<span class="material-symbols-outlined">logout</span> Check Out';
+        }
+    } catch (e) {
+        alert('Network error');
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined">logout</span> Check Out';
+    }
+}
+</script>
 </body></html>
