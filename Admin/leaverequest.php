@@ -151,7 +151,6 @@ if ($searchTerm !== '') {
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
 <!-- Material Symbols -->
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <!-- Tailwind CSS -->
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script id="tailwind-config">
@@ -248,6 +247,10 @@ if ($searchTerm !== '') {
         },
       }
     </script>
+<link rel="stylesheet" href="../config/dashboard.css"/>
+<link rel="stylesheet" href="../config/theme.css"/>
+<script src="../config/theme.js"></script>
+<script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
 <style>
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -270,67 +273,12 @@ if ($searchTerm !== '') {
     </style>
 </head>
 <body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
-<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
-<!-- SideNavBar Shell -->
-<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest shadow-sm border-r border-outline-variant dark:border-outline flex flex-col py-lg z-50 -translate-x-full transition-transform duration-300">
-<!-- Brand Header -->
-<div class="px-lg mb-xl">
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight"><?= htmlspecialchars($adminName) ?></h1>
-<p class="font-body-sm text-on-primary opacity-80">HR Management System</p>
-</div>
-<!-- Navigation Links -->
-<nav class="flex-1 space-y-1">
-<!-- Dashboard -->
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95 group" href="dashboard.php">
-<span class="material-symbols-outlined">dashboard</span>
-<span class="font-label-caps text-label-caps">Dashboard</span>
-</a>
-<!-- Employees -->
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="employeement_management.php">
-<span class="material-symbols-outlined">groups</span>
-<span class="font-label-caps text-label-caps">Employees</span>
-</a>
-<!-- Departments -->
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="department_management.php">
-<span class="material-symbols-outlined">domain</span>
-<span class="font-label-caps text-label-caps">Departments</span>
-</a>
-<!-- Attendance -->
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="attendenceman.php">
-<span class="material-symbols-outlined">fact_check</span>
-<span class="font-label-caps text-label-caps">Attendance</span>
-</a>
-<!-- Leave Requests (ACTIVE) -->
-<a class="flex items-center gap-md px-md py-sm border-l-4 border-secondary bg-primary-container text-on-primary cursor-pointer active:scale-95" href="leaverequest.php">
-<span class="material-symbols-outlined">event_busy</span>
-<span class="font-label-caps text-label-caps">Leave Requests</span>
-</a>
-</nav>
-<!-- Footer Actions -->
-<div class="mt-auto border-t border-on-primary-container/10 pt-lg">
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="admin_setting.php">
-<span class="material-symbols-outlined">settings</span>
-<span class="font-label-caps text-label-caps">Settings</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="dashboard.php">
-<span class="material-symbols-outlined">logout</span>
-<span class="font-label-caps text-label-caps">Logout</span>
-</a>
-<div class="px-md mt-lg flex items-center gap-sm">
-<div class="w-10 h-10 rounded-full overflow-hidden border border-outline-variant/30">
-<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" alt="<?= htmlspecialchars($adminName) ?>" src="<?= $adminAvatarDisplay ?>"/>
-</div>
-<div>
-<p class="font-body-sm font-semibold text-on-primary"><?= htmlspecialchars($adminName) ?></p>
-<p class="text-[10px] uppercase tracking-widest text-on-primary-container">Super Administrator</p>
-</div>
-</div>
-</div>
-</aside>
+<?php $activePage = 'leave_requests'; ?>
+<?php include __DIR__ . '/includes/sidebar_admin.php'; ?>
 <!-- Main Content Shell -->
-<main class="md:ml-[260px] min-h-screen">
+<main id="mainContent" class="min-h-screen">
 <!-- TopNavBar Shell -->
-<header class="fixed top-0 right-0 w-full md:w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40">
+<header id="mainHeader" class="fixed top-0 right-0 w-full h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40">
 <div class="flex items-center gap-lg">
 <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
 <h2 class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-inverse-primary">HR Admin</h2>
@@ -583,46 +531,5 @@ $tabParam = 'tab=' . $tab;
             searchInput.parentElement.classList.remove('ring-2', 'ring-secondary/20');
         });
     </script>
-<script>
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main');
-    const header = document.querySelector('header');
-    const isOpen = sidebar.classList.contains('translate-x-0');
-    if (isOpen) {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (overlay) overlay.classList.add('hidden');
-        if (main) main.style.marginLeft = '0';
-        if (header) header.style.width = '100%';
-    } else {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (overlay) overlay.classList.remove('hidden');
-        if (main) main.style.marginLeft = '';
-        if (header) header.style.width = '';
-    }
-}
-function setSidebarState() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main');
-    const header = document.querySelector('header');
-    if (window.innerWidth >= 768) {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (main) main.style.marginLeft = '';
-        if (header) header.style.width = '';
-    } else {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (main) main.style.marginLeft = '0';
-        if (header) header.style.width = '100%';
-    }
-    if (overlay) overlay.classList.add('hidden');
-}
-setSidebarState();
-window.addEventListener('resize', setSidebarState);
-</script>
+<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

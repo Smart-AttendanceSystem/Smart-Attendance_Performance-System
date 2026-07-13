@@ -29,14 +29,6 @@ if ($lrRes && $lrRes->num_rows > 0) {
     }
 }
 $totalEntries = count($leaveRequests);
-
-$empProfile = [];
-$profRes = $conn->query("SELECT position, avatar FROM employee_profiles WHERE user_id = $userId");
-if ($profRes && $profRes->num_rows > 0) {
-    $empProfile = $profRes->fetch_assoc();
-}
-$empPosition = $empProfile['position'] ?? 'Employee';
-$empAvatar = $empProfile['avatar'] ?? '';
 ?>
 <!DOCTYPE html>
 
@@ -44,11 +36,11 @@ $empAvatar = $empProfile['avatar'] ?? '';
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Leave Status - HR Connect</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
       tailwind.config = {
         darkMode: "class",
@@ -143,6 +135,8 @@ $empAvatar = $empProfile['avatar'] ?? '';
         },
       }
     </script>
+<link rel="stylesheet" href="../config/dashboard.css"/>    <link rel="stylesheet" href="../config/theme.css"/>
+    <script src="../config/theme.js"></script><script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
 <style>
         body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
@@ -151,78 +145,15 @@ $empAvatar = $empProfile['avatar'] ?? '';
     </style>
 </head>
 <body class="text-on-surface bg-background">
-<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
-<!-- Predicted SideNavBar Component -->
-<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide -translate-x-full transition-transform duration-300">
-<div class="px-md mb-xl">
-
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Smart Attendence</h1>
-
-</div>
-<nav class="flex-grow space-y-1">
-<!-- Dashboard is Active -->
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="userdashboard.php">
-<span class="material-symbols-outlined">dashboard</span>
-<span class="font-label-caps text-label-caps">Dashboard</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="attendence.php">
-<span class="material-symbols-outlined">schedule</span>
-<span class="font-label-caps text-label-caps">Attendence</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="leaveform.php">
-<span class="material-symbols-outlined">event_note</span>
-<span class="font-label-caps text-label-caps">Leave Request</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm border-l-4 border-secondary bg-primary-container text-on-primary cursor-pointer active:scale-95 transition-all" href="leavestatus.php">
-<span class="material-symbols-outlined">assignment_turned_in</span>
-<span class="font-label-caps text-label-caps">Leave Status</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="profile.php">
-<span class="material-symbols-outlined">person</span>
-<span class="font-label-caps text-label-caps">Profile</span>
-</a>
-</nav>
-<div class="mt-auto border-t border-on-primary-fixed-variant/20 pt-lg space-y-1">
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="requestpassword.php">
-<span class="material-symbols-outlined">lock</span>
-<span class="font-label-caps text-label-caps">Change Password</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="../auth/logout.php">
-<span class="material-symbols-outlined" data-icon="logout">logout</span>
-<span class="font-label-caps text-label-caps">Logout</span>
-</a>
-</div>
-</aside>
-<!-- Main Content Area -->
-<main class="md:ml-sidebar-width flex-1 flex flex-col min-h-0 bg-background">
-<!-- TopNavBar (Authority: JSON) -->
-<header class="flex justify-between items-center px-lg py-md bg-surface border-b border-outline-variant transition-colors duration-150 sticky top-0 z-40">
-<div class="flex items-center gap-md">
-<button onclick="toggleSidebar()" class="text-primary">
-<span class="material-symbols-outlined">menu</span>
-</button>
-<span class="font-headline-sm text-headline-sm text-primary font-bold">HR Connect</span>
-</div>
-<div class="flex items-center gap-lg">
-<!-- Search Bar (on_right) -->
-<div class="hidden md:flex items-center bg-surface-container rounded-lg px-md py-xs border border-outline-variant focus-within:border-primary transition-all">
-<span class="material-symbols-outlined text-outline">search</span>
-<input class="bg-transparent border-none focus:ring-0 text-body-sm w-64 placeholder:text-on-surface-variant" placeholder="Search tasks..." type="text"/>
-</div>
-<!-- Actions Area -->
-<div class="flex items-center gap-md">
-
-<!-- Profile -->
-<div class="flex items-center gap-sm border-l border-outline-variant pl-lg ml-sm">
-<div class="text-right hidden sm:block">
-<p class="font-body-md font-bold text-primary"><?= htmlspecialchars($userName) ?></p>
-<p class="text-body-sm text-on-surface-variant"><?= htmlspecialchars($empPosition) ?></p>
-</div>
-<img src="<?= $empAvatar ? '../uploads/avatars/' . htmlspecialchars($empAvatar) : 'https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg' ?>" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant object-cover" alt="">
-</div>
-</div>
-</div>
+<?php $activePage = 'leave_status'; ?>
+<?php include __DIR__ . '/includes/sidebar_user.php'; ?>
+<!-- Top Navigation Bar -->
+<header id="mainHeader" class="fixed top-0 right-0 w-full h-10 bg-surface dark:bg-surface-dim  shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+    <div class="flex items-center gap-lg flex-1">
+        <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
+    </div>
 </header>
+<main id="mainContent" class="pt-10 h-screen overflow-y-auto bg-background p-lg">
 <!-- Content Canvas -->
 <div class="flex-1 overflow-y-auto p-lg">
 <!-- Page Header Section -->
@@ -231,10 +162,6 @@ $empAvatar = $empProfile['avatar'] ?? '';
 <h2 class="font-display-lg text-display-lg text-primary">Leave Status</h2>
 <p class="text-on-surface-variant font-body-md">Track your leave requests and their current status</p>
 </div>
-<a href="leaveform.php" class="inline-flex items-center justify-center gap-xs px-xl py-md bg-primary text-on-primary rounded-lg font-headline-sm hover:bg-primary-container transition-colors shadow-sm">
-<span class="material-symbols-outlined">add</span>
-                        New Leave Request
-                    </a>
 </div>
 <!-- Table Container (Level 1 Surface) -->
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
@@ -317,7 +244,6 @@ $rowClass = $i % 2 === 1 ? 'bg-surface-container-low/30' : '';
 </div>
 </div>
 </main>
-</div>
 <!-- Micro-interaction Script -->
 <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -337,40 +263,5 @@ $rowClass = $i % 2 === 1 ? 'bg-surface-container-low/30' : '';
             // Ripple effect logic could be added here for buttons
         });
     </script>
-<script>
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main');
-    const isOpen = sidebar.classList.contains('translate-x-0');
-    if (isOpen) {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (overlay) overlay.classList.add('hidden');
-        if (main) main.style.marginLeft = '0';
-    } else {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (overlay) overlay.classList.remove('hidden');
-        if (main) main.style.marginLeft = '';
-    }
-}
-function setSidebarState() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main');
-    if (window.innerWidth >= 768) {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (main) main.style.marginLeft = '';
-    } else {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (main) main.style.marginLeft = '0';
-    }
-    if (overlay) overlay.classList.add('hidden');
-}
-setSidebarState();
-window.addEventListener('resize', setSidebarState);
-</script>
+<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

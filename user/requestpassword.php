@@ -3,10 +3,19 @@ session_start();
 require_once __DIR__ . '/../config/db.php';
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
+$emailParam = trim($_GET['email'] ?? '');
 
-if ($userId <= 0) {
-    header('Location: ../auth/login.php');
-    exit;
+// If not logged in but email is provided via query parameter, look up user by email
+if ($userId === 0 && $emailParam !== '') {
+    $emailStmt = $conn->prepare("SELECT id FROM `user` WHERE email = ?");
+    $emailStmt->bind_param('s', $emailParam);
+    $emailStmt->execute();
+    $emailResult = $emailStmt->get_result();
+    $emailUser = $emailResult->fetch_assoc();
+    if ($emailUser) {
+        $userId = (int) $emailUser['id'];
+    }
+    $emailStmt->close();
 }
 
 $user = [];
@@ -16,21 +25,23 @@ $stmt->execute();
 $result = $stmt->get_result();
 $user = $result->fetch_assoc();
 
-if (!$user) {
-    header('Location: ../auth/login.php');
-    exit;
-}
-
 $message = '';
 $messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $reason = trim($_POST['reason'] ?? '');
+    $postUserId = (int) ($_POST['user_id'] ?? 0);
+    $postUserEmail = trim($_POST['user_email'] ?? '');
+
     if ($reason === '') {
         $message = 'Please enter a reason for the password reset.';
         $messageType = 'error';
+    } elseif ($postUserId === 0) {
+        $message = 'Invalid user. Please try again.';
+        $messageType = 'error';
     } else {
-        $notifTitle = 'Password Reset Request from ' . $user['name'];
+        $senderName = $user['name'] ?? ($_SESSION['user_name'] ?? 'Guest');
+        $notifTitle = 'Password Reset Request from ' . $senderName;
         $notifMessage = $reason;
 
         $adminStmt = $conn->prepare("SELECT id FROM `user` WHERE LOWER(role) = 'admin'");
@@ -46,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $inserted = true;
             }
         }
-        $insertStmt->bind_param('iss', $userId, $notifTitle, $notifMessage);
+        $insertStmt->bind_param('iss', $postUserId, $notifTitle, $notifMessage);
         if ($insertStmt->execute()) {
             $inserted = true;
         }
@@ -62,12 +73,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $requests = [];
-$reqStmt = $conn->prepare("SELECT title, message, created_at FROM notifications WHERE user_id = ? AND type = 'password_reset' ORDER BY created_at DESC LIMIT 5");
-$reqStmt->bind_param('i', $userId);
-$reqStmt->execute();
-$reqResult = $reqStmt->get_result();
-while ($row = $reqResult->fetch_assoc()) {
-    $requests[] = $row;
+if ($userId > 0) {
+    $reqStmt = $conn->prepare("SELECT title, message, created_at FROM notifications WHERE user_id = ? AND type = 'password_reset' ORDER BY created_at DESC LIMIT 5");
+    $reqStmt->bind_param('i', $userId);
+    $reqStmt->execute();
+    $reqResult = $reqStmt->get_result();
+    while ($row = $reqResult->fetch_assoc()) {
+        $requests[] = $row;
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -76,9 +89,8 @@ while ($row = $reqResult->fetch_assoc()) {
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Smart Attendance - Forgot Password Request</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
@@ -175,6 +187,8 @@ while ($row = $reqResult->fetch_assoc()) {
         },
       }
     </script>
+<link rel="stylesheet" href="../config/dashboard.css"/>    <link rel="stylesheet" href="../config/theme.css"/>
+    <script src="../config/theme.js"></script><script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
 <style>
         body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
@@ -183,74 +197,17 @@ while ($row = $reqResult->fetch_assoc()) {
     </style>
 </head>
 <body class="text-on-surface bg-background">
-<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
-<!-- Predicted SideNavBar Component -->
-<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide -translate-x-full transition-transform duration-300">
-<div class="px-md mb-xl">
-
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Smart Attendence</h1>
-
-</div>
-<nav class="flex-grow space-y-1">
-<!-- Dashboard is Active -->
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="userdashboard.php">
-<span class="material-symbols-outlined">dashboard</span>
-<span class="font-label-caps text-label-caps">Dashboard</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="attendence.php">
-<span class="material-symbols-outlined">schedule</span>
-<span class="font-label-caps text-label-caps">Attendence</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="leaveform.php">
-<span class="material-symbols-outlined">event_note</span>
-<span class="font-label-caps text-label-caps">Leave Request</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="leavestatus.php">
-<span class="material-symbols-outlined">assignment_turned_in</span>
-<span class="font-label-caps text-label-caps">Leave Status</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="profile.php">
-<span class="material-symbols-outlined">person</span>
-<span class="font-label-caps text-label-caps">Profile</span>
-</a>
-</nav>
-<div class="mt-auto border-t border-on-primary-fixed-variant/20 pt-lg space-y-1">
-<a class="flex items-center gap-md px-md py-sm border-l-4 border-secondary bg-primary-container text-on-primary cursor-pointer active:scale-95 transition-all" href="requestpassword.php">
-<span class="material-symbols-outlined">lock</span>
-<span class="font-label-caps text-label-caps">Change Password</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="../auth/logout.php">
-<span class="material-symbols-outlined" data-icon="logout">logout</span>
-<span class="font-label-caps text-label-caps">Logout</span>
-</a>
-</div>
-</aside>
-<!-- Main Content Area -->
-<main class="flex-1 md:ml-[260px] flex flex-col h-screen overflow-y-auto">
-<!-- TopNavBar Component -->
-<header class="docked full-width top-0 z-40 bg-surface border-b border-outline-variant flex justify-between items-center w-full px-lg h-16 sticky top-0">
-<div class="flex items-center gap-md">
-<button onclick="toggleSidebar()" class="p-base hover:bg-surface-container rounded-lg transition-colors">
-<span class="material-symbols-outlined text-on-surface-variant">menu</span>
-</button>
-<div class="flex flex-col">
-<h2 class="font-headline-sm text-headline-sm font-bold text-primary">Welcome, <?= htmlspecialchars($user['name'] ?? '') ?> 👋</h2>
-<p class="font-body-sm text-body-sm text-on-surface-variant">Employee ID : EMP-<?= (int) ($user['id'] ?? 0) ?></p>
-</div>
-</div>
-<div class="flex items-center gap-xl">
-<div class="flex items-center gap-sm cursor-pointer hover:bg-surface-container p-xs rounded-lg transition-colors">
-<div class="w-10 h-10 rounded-full border border-outline-variant overflow-hidden">
-<img src="<?= !empty($user['avatar']) ? '../uploads/avatars/' . htmlspecialchars($user['avatar']) : 'https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg' ?>" class="w-22 h-22 rounded-full border-4 border-surface-container overflow-hidden object-cover" alt="">
-</div>
-<div class="hidden sm:flex flex-col">
-<span class="font-body-md font-semibold text-on-surface"><?= htmlspecialchars($user['name'] ?? '') ?></span>
-<span class="font-body-sm text-[11px] text-on-surface-variant"><?= htmlspecialchars($user['position'] ?? 'Employee') ?></span>
-</div>
-<span class="material-symbols-outlined text-on-surface-variant">keyboard_arrow_down</span>
-</div>
-</div>
+<?php $activePage = 'change_password'; ?>
+<?php include __DIR__ . '/includes/sidebar_user.php'; ?>
+<!-- Top Navigation Bar -->
+<header id="mainHeader" class="fixed top-0 right-0 w-full h-10 bg-surface dark:bg-surface-dim shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+    <div class="flex items-center gap-lg flex-1">
+        <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
+    </div>
+   
 </header>
+<!-- Main Content Area -->
+<main id="mainContent" class="pt-10 h-screen overflow-y-auto bg-background">
 <!-- Canvas -->
 <div class="flex-1 p-lg max-w-[1600px] w-full mx-auto">
 <div class="mb-xl">
@@ -266,7 +223,19 @@ while ($row = $reqResult->fetch_assoc()) {
 <?= htmlspecialchars($message) ?>
 </div>
 <?php endif; ?>
+<?php if (empty($user)): ?>
+<div class="text-center py-lg">
+<span class="material-symbols-outlined text-6xl text-on-surface-variant mb-md block">person_off</span>
+<h4 class="font-headline-sm text-headline-sm text-on-surface mb-sm">User Not Found</h4>
+<p class="font-body-md text-on-surface-variant">Please enter your email on the login page and click "Forgot Password?" again.</p>
+<a href="../index.php" class="inline-flex items-center gap-sm mt-md bg-[#0061ff] hover:bg-[#0052d9] text-white px-xl py-sm rounded-lg font-label-caps text-label-caps tracking-wide transition-all">
+<span>BACK TO LOGIN</span>
+</a>
+</div>
+<?php else: ?>
 <form method="post">
+<input type="hidden" name="user_id" value="<?= (int) ($user['id'] ?? 0) ?>">
+<input type="hidden" name="user_email" value="<?= htmlspecialchars($user['email'] ?? '') ?>">
 <div class="grid grid-cols-1 md:grid-cols-2 gap-lg">
 <div class="space-y-xs">
 <label class="font-label-caps text-label-caps text-on-surface-variant uppercase">Employee ID</label>
@@ -293,12 +262,14 @@ while ($row = $reqResult->fetch_assoc()) {
 </button>
 </div>
 </form>
+<?php endif; ?>
 </div>
 </div>
 <!-- Guidance/Info Section (Side Column) -->
 
 </div>
 <!-- Recent Requests Table (Subtle Preview) -->
+<?php if (!empty($user)): ?>
 <div class="mt-xl">
 <div class="flex items-center justify-between mb-md">
 <h4 class="font-headline-sm text-headline-sm text-on-surface">Recent Reset History</h4>
@@ -333,6 +304,7 @@ while ($row = $reqResult->fetch_assoc()) {
 </table>
 </div>
 </div>
+<?php endif; ?>
 </div>
 </main>
 <script>
@@ -359,40 +331,5 @@ while ($row = $reqResult->fetch_assoc()) {
             if (indicator) indicator.classList.toggle('animate-pulse');
         }, 3000);
     </script>
-<script>
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main');
-    const isOpen = sidebar.classList.contains('translate-x-0');
-    if (isOpen) {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (overlay) overlay.classList.add('hidden');
-        if (main) main.style.marginLeft = '0';
-    } else {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (overlay) overlay.classList.remove('hidden');
-        if (main) main.style.marginLeft = '';
-    }
-}
-function setSidebarState() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main');
-    if (window.innerWidth >= 768) {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (main) main.style.marginLeft = '';
-    } else {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (main) main.style.marginLeft = '0';
-    }
-    if (overlay) overlay.classList.add('hidden');
-}
-setSidebarState();
-window.addEventListener('resize', setSidebarState);
-</script>
+<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

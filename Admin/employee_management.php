@@ -163,6 +163,8 @@ $totalEmployees = 0;
 $newHiresThisMonth = 0;
 $employees = [];
 $departments = [];
+$deptStats = [];
+$deptFilter = isset($_GET['dept_filter']) ? (int) $_GET['dept_filter'] : 0;
 
 $empCountRes = $conn->query("SELECT COUNT(*) FROM `user` WHERE role = 'employee'");
 if ($empCountRes) $totalEmployees = (int) $empCountRes->fetch_row()[0];
@@ -170,13 +172,25 @@ if ($empCountRes) $totalEmployees = (int) $empCountRes->fetch_row()[0];
 $newRes = $conn->query("SELECT COUNT(*) FROM `user` WHERE role = 'employee' AND MONTH(created_at) = $currentMonth AND YEAR(created_at) = $currentYear");
 if ($newRes) $newHiresThisMonth = (int) $newRes->fetch_row()[0];
 
-$perPage = 5;
+$filteredCount = 0;
+if ($deptFilter > 0) {
+    $filteredCountRes = $conn->query("SELECT COUNT(*) FROM `user` WHERE role = 'employee' AND department_id = $deptFilter");
+} else {
+    $filteredCountRes = $conn->query("SELECT COUNT(*) FROM `user` u LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.role = 'employee' AND ep.position LIKE '%Manager%'");
+}
+if ($filteredCountRes) $filteredCount = (int) $filteredCountRes->fetch_row()[0];
+
+$perPage = 10;
 $page = isset($_GET['page']) ? max(1, (int) $_GET['page']) : 1;
-$totalPages = max(1, ceil($totalEmployees / $perPage));
+$totalPages = max(1, ceil($filteredCount / $perPage));
 $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
-$empRes = $conn->query("SELECT u.id, u.name, u.email, u.status, d.name AS department_name, ep.position FROM `user` u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.role = 'employee' ORDER BY u.id $sort LIMIT $perPage OFFSET $offset");
+if ($deptFilter > 0) {
+    $empRes = $conn->query("SELECT u.id, u.name, u.email, u.status, d.name AS department_name, ep.position FROM `user` u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.role = 'employee' AND u.department_id = $deptFilter ORDER BY u.id $sort LIMIT $perPage OFFSET $offset");
+} else {
+    $empRes = $conn->query("SELECT u.id, u.name, u.email, u.status, d.name AS department_name, ep.position FROM `user` u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.role = 'employee' AND ep.position LIKE '%Manager%' ORDER BY u.id $sort LIMIT $perPage OFFSET $offset");
+}
 if ($empRes && $empRes->num_rows > 0) {
     while ($row = $empRes->fetch_assoc()) {
         $employees[] = $row;
@@ -187,6 +201,13 @@ $deptRes = $conn->query("SELECT id, name FROM departments ORDER BY name ASC");
 if ($deptRes && $deptRes->num_rows > 0) {
     while ($row = $deptRes->fetch_assoc()) {
         $departments[] = $row;
+    }
+}
+
+$deptStatsRes = $conn->query("SELECT d.id, d.name, COUNT(u.id) AS emp_count FROM departments d LEFT JOIN `user` u ON u.department_id = d.id AND u.role = 'employee' GROUP BY d.id, d.name ORDER BY d.name ASC");
+if ($deptStatsRes && $deptStatsRes->num_rows > 0) {
+    while ($row = $deptStatsRes->fetch_assoc()) {
+        $deptStats[] = $row;
     }
 }
 ?>
@@ -201,7 +222,6 @@ if ($deptRes && $deptRes->num_rows > 0) {
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
 <!-- Icons -->
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <!-- Scripts -->
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
@@ -299,6 +319,10 @@ if ($deptRes && $deptRes->num_rows > 0) {
         },
       }
     </script>
+<link rel="stylesheet" href="../config/dashboard.css"/>
+<link rel="stylesheet" href="../config/theme.css"/>
+<script src="../config/theme.js"></script>
+<script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
 <style>
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -309,70 +333,29 @@ if ($deptRes && $deptRes->num_rows > 0) {
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
         .zebra-row:nth-child(even) { background-color: #f3f4f5; }
-        .hover-row:hover { background-color: rgba(0, 107, 88, 0.05); }
+        .hover-row:hover { background-color: rgba(0, 107,88,0.2); }
     </style>
 </head>
 <body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
-<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
-<!-- SideNavBar -->
-<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary flex flex-col py-lg border-r border-outline-variant shadow-sm z-50 overflow-y-auto -translate-x-full transition-transform duration-300">
-<div class="px-md mb-xl">
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary"><?= htmlspecialchars($adminName) ?></h1>
-<p class="font-body-md text-body-md text-on-primary">HR Management System</p>
-</div>
-<nav class="flex-1 space-y-base">
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="dashboard.php">
-<span class="material-symbols-outlined">dashboard</span>
-<span class="font-label-caps text-label-caps">Dashboard</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm border-l-4 border-secondary bg-primary-container text-on-primary transition-colors duration-200 cursor-pointer active:scale-95" href="employee_management.php">
-<span class="material-symbols-outlined">groups</span>
-<span class="font-label-caps text-label-caps">Employees</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="department_management.php">
-<span class="material-symbols-outlined">domain</span>
-<span class="font-label-caps text-label-caps">Departments</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="attendenceman.php">
-<span class="material-symbols-outlined">fact_check</span>
-<span class="font-label-caps text-label-caps">Attendance</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="leaverequest.php">
-<span class="material-symbols-outlined">event_busy</span>
-<span class="font-label-caps text-label-caps">Leave Requests</span>
-</a>
-</nav>
-
-</div>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary transition-colors duration-200" href="admin_setting.php">
-<span class="material-symbols-outlined">settings</span>
-<span class="font-label-caps text-label-caps">Settings</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary transition-colors duration-200" href="dashboard.php">
-<span class="material-symbols-outlined">logout</span>
-<span class="font-label-caps text-label-caps">Logout</span>
-</a>
-</div>
-</aside>
+<?php $activePage = 'employees'; ?>
+<?php include __DIR__ . '/includes/sidebar_admin.php'; ?>
 <!-- Main Content Area -->
-<div class="md:ml-[260px] min-h-screen flex flex-col">
+<div id="mainContent" class="min-h-screen flex flex-col">
 <!-- TopNavBar -->
-<header class="fixed top-0 right-0 w-full md:w-[calc(100%-260px)] h-16 bg-surface border-b border-outline-variant flex justify-between items-center px-lg h-16 z-40 shadow-sm">
+<header id="mainHeader" class="fixed top-0 right-0 w-full h-16 bg-surface border-b border-outline-variant flex justify-between items-center px-lg h-16 z-40 shadow-sm">
 <div class="flex items-center gap-lg flex-1">
 <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
 <span class="font-headline-sm text-headline-sm font-semibold text-primary">HR Admin</span>
 <div class="relative w-full max-w-md">
 <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
-<input class="w-full bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-secondary text-body-md" placeholder="Search by name, department, or ID..." type="text"/>
+<input id="hrAdminSearch" name="search" class="w-full bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-secondary text-body-md" placeholder="Search by name, department, or ID..." type="text"/>
 </div>
 </div>
 <div class="flex items-center gap-md">
 <button class="bg-secondary text-on-secondary px-md py-2 rounded-lg font-label-caps text-label-caps transition-all duration-200 hover:opacity-90 active:scale-95" onclick="document.getElementById('modal-overlay').classList.remove('hidden')">
                     Add Employee
                 </button>
-<div class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant overflow-hidden ml-sm">
-<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" alt="<?= htmlspecialchars($adminName) ?>" src="<?= $adminAvatarDisplay ?>"/>
-</div>
+
 </div>
 </header>
 <!-- Main Canvas -->
@@ -412,13 +395,23 @@ if ($deptRes && $deptRes->num_rows > 0) {
 </div>
 </div>
 </div>
+<!-- Department Filter Dropdown -->
+<div class="flex items-center gap-sm -mt-1">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Filter by Department</label>
+<select onchange="if(this.value) window.location='employee_management.php?dept_filter='+this.value+'&sort=<?= strtolower($sort) ?>'; else window.location='employee_management.php?sort=<?= strtolower($sort) ?>';" class="border-outline-variant rounded-lg focus:ring-secondary focus:border-secondary text-body-sm py-2 px-md">
+<option value="">All Departments (Managers)</option>
+<?php foreach ($deptStats as $ds): ?>
+<option value="<?= (int) $ds['id'] ?>" <?= $deptFilter === (int) $ds['id'] ? 'selected' : '' ?>><?= htmlspecialchars($ds['name']) ?> </option>
+<?php endforeach; ?>
+</select>
+</div>
 <!-- Table Container -->
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden">
 <div class="overflow-x-auto">
 <table class="w-full text-left border-collapse">
 <thead>
 <tr class="bg-surface-container-low border-b border-outline-variant">
-                <th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant cursor-pointer select-none hover:text-primary transition-colors" onclick="window.location='employee_management.php?page=<?= $page ?>&sort=<?= $sort === 'ASC' ? 'desc' : 'asc' ?>'">ID <span class="material-symbols-outlined text-[14px] align-middle"><?= $sort === 'ASC' ? 'arrow_upward' : 'arrow_downward' ?></span></th>
+                <th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant cursor-pointer select-none hover:text-primary transition-colors" onclick="window.location='employee_management.php?page=<?= $page ?>&sort=<?= $sort === 'ASC' ? 'desc' : 'asc' ?><?= $deptFilter > 0 ? '&amp;dept_filter='.$deptFilter : '' ?>'">ID <span class="material-symbols-outlined text-[14px] align-middle"><?= $sort === 'ASC' ? 'arrow_upward' : 'arrow_downward' ?></span></th>
 <th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Name</th>
 <th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Department</th>
 <th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">Position</th>
@@ -430,7 +423,7 @@ if ($deptRes && $deptRes->num_rows > 0) {
 <tbody class="font-body-md text-on-surface">
 <?php if (!empty($employees)): ?>
 <?php foreach ($employees as $emp): ?>
-<tr class="zebra-row hover-row border-b border-surface-container transition-colors">
+<tr class=" hover-row border-b border-surface-container transition-colors">
 <td class="px-lg py-md font-data-mono text-data-mono">YGN-<?= str_pad($emp['id'], 4, '0', STR_PAD_LEFT) ?></td>
 <td class="px-lg py-md">
 <div class="flex items-center gap-sm">
@@ -467,18 +460,18 @@ if ($deptRes && $deptRes->num_rows > 0) {
 </div>
 <!-- Pagination Footer -->
 <div class="p-lg bg-surface-container-lowest border-t border-outline-variant flex justify-between items-center">
-<span class="text-body-sm text-on-surface-variant">Showing <?= count($employees) ?> of <?= number_format($totalEmployees) ?> employees</span>
+<span class="text-body-sm text-on-surface-variant">Showing <?= count($employees) ?> of <?= number_format($filteredCount) ?> employees</span>
 <div class="flex gap-xs">
 <?php if ($page > 1): ?>
-<a class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm" href="employee_management.php?page=<?= $page - 1 ?>&sort=<?= strtolower($sort) ?>">Previous</a>
+<a class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm" href="employee_management.php?page=<?= $page - 1 ?>&sort=<?= strtolower($sort) ?><?= $deptFilter > 0 ? '&dept_filter='.$deptFilter : '' ?>">Previous</a>
 <?php else: ?>
 <button class="px-3 py-1 border border-outline-variant rounded text-body-sm opacity-30" disabled>Previous</button>
 <?php endif; ?>
 <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-<a class="px-3 py-1 rounded text-body-sm <?= $i === $page ? 'bg-secondary text-on-secondary font-bold' : 'border border-outline-variant hover:bg-surface-container transition-colors' ?>" href="employee_management.php?page=<?= $i ?>&sort=<?= strtolower($sort) ?>"><?= $i ?></a>
+<a class="px-3 py-1 rounded text-body-sm <?= $i === $page ? 'bg-secondary text-on-secondary font-bold' : 'border border-outline-variant hover:bg-surface-container transition-colors' ?>" href="employee_management.php?page=<?= $i ?>&sort=<?= strtolower($sort) ?><?= $deptFilter > 0 ? '&dept_filter='.$deptFilter : '' ?>"><?= $i ?></a>
 <?php endfor; ?>
 <?php if ($page < $totalPages): ?>
-<a class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm" href="employee_management.php?page=<?= $page + 1 ?>&sort=<?= strtolower($sort) ?>">Next</a>
+<a class="px-3 py-1 border border-outline-variant rounded hover:bg-surface-container transition-colors text-body-sm" href="employee_management.php?page=<?= $page + 1 ?>&sort=<?= strtolower($sort) ?><?= $deptFilter > 0 ? '&dept_filter='.$deptFilter : '' ?>">Next</a>
 <?php else: ?>
 <button class="px-3 py-1 border border-outline-variant rounded text-body-sm opacity-30" disabled>Next</button>
 <?php endif; ?>
@@ -689,47 +682,29 @@ if ($deptRes && $deptRes->num_rows > 0) {
                 document.getElementById('edit-modal').classList.add('hidden');
             }
         });
+
+       
+document.getElementById('hrAdminSearch').addEventListener('input', function() {
+    // 1. Get the lowercase text typed by the admin user
+    const query = this.value.toLowerCase().trim();
+    
+    // 2. Select all active data rows inside your employee/attendance table body
+    const rows = document.querySelectorAll('table tbody tr');
+
+    rows.forEach(row => {
+        // 3. Scan the column text cells (Name, Department, and Employee ID)
+        const nameColumn = row.querySelector('td:nth-child(1)')?.textContent.toLowerCase() || '';
+        const deptColumn = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
+        const idColumn = row.querySelector('td:nth-child(3)')?.textContent.toLowerCase() || '';
+
+        // 4. If the row contains what you searched for, show it; otherwise, hide it
+        if (nameColumn.includes(query) || deptColumn.includes(query) || idColumn.includes(query)) {
+            row.style.display = ''; // Show row
+        } else {
+            row.style.display = 'none'; // Hide row
+        }
+    });
+});
     </script>
-<script>
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main') || document.querySelector('[class*="ml-["]');
-    const header = document.querySelector('header');
-    const isOpen = sidebar.classList.contains('translate-x-0');
-    if (isOpen) {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (overlay) overlay.classList.add('hidden');
-        if (main) main.style.marginLeft = '0';
-        if (header) header.style.width = '100%';
-    } else {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (overlay) overlay.classList.remove('hidden');
-        if (main) main.style.marginLeft = '';
-        if (header) header.style.width = '';
-    }
-}
-function setSidebarState() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main') || document.querySelector('[class*="ml-["]');
-    const header = document.querySelector('header');
-    if (window.innerWidth >= 768) {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (main) main.style.marginLeft = '';
-        if (header) header.style.width = '';
-    } else {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (main) main.style.marginLeft = '0';
-        if (header) header.style.width = '100%';
-    }
-    if (overlay) overlay.classList.add('hidden');
-}
-setSidebarState();
-window.addEventListener('resize', setSidebarState);
-</script>
+<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

@@ -146,9 +146,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_avatar'])) {
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Employee Portal - My Profile</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
@@ -245,6 +244,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_avatar'])) {
         },
       }
     </script>
+<link rel="stylesheet" href="../config/dashboard.css"/>
+<link rel="stylesheet" href="../config/theme.css"/>
+<script src="../config/theme.js"></script>
+<script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
 <style>
         body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
@@ -253,69 +256,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_avatar'])) {
     </style>
 </head>
 <body class="text-on-surface bg-background">
-<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
-<!-- Predicted SideNavBar Component -->
-<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide -translate-x-full transition-transform duration-300">
-<div class="px-md mb-xl">
-
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight">Smart Attendence</h1>
-
-</div>
-<nav class="flex-grow space-y-1">
-<!-- Dashboard is Active -->
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="userdashboard.php">
-<span class="material-symbols-outlined">dashboard</span>
-<span class="font-label-caps text-label-caps">Dashboard</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="attendence.php">
-<span class="material-symbols-outlined">schedule</span>
-<span class="font-label-caps text-label-caps">Attendence</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="leaveform.php">
-<span class="material-symbols-outlined">event_note</span>
-<span class="font-label-caps text-label-caps">Leave Request</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="leavestatus.php">
-<span class="material-symbols-outlined">assignment_turned_in</span>
-<span class="font-label-caps text-label-caps">Leave Status</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm border-l-4 border-secondary bg-primary-container text-on-primary cursor-pointer active:scale-95 transition-all" href="profile.php">
-<span class="material-symbols-outlined">person</span>
-<span class="font-label-caps text-label-caps">Profile</span>
-</a>
-</nav>
-<div class="mt-auto border-t border-on-primary-fixed-variant/20 pt-lg space-y-1">
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="requestpassword.php">
-<span class="material-symbols-outlined">lock</span>
-<span class="font-label-caps text-label-caps">change password</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="../auth/logout.php">
-<span class="material-symbols-outlined" data-icon="logout">logout</span>
-<span class="font-label-caps text-label-caps">Logout</span>
-</a>
-</div>
-</aside>
-<!-- TopNavBar Anchor -->
-<header class="fixed top-0 left-0 right-0 md:ml-sidebar-width h-16 bg-surface border-b border-outline-variant flex items-center justify-between px-lg z-40 transition-colors duration-150">
-<div class="flex items-center space-x-md">
-<button onclick="toggleSidebar()" class="p-base hover:bg-surface-container-low rounded-lg">
-<span class="material-symbols-outlined text-on-surface-variant">menu</span>
-</button>
-<h2 class="font-headline-sm text-headline-sm text-primary font-bold">HR Connect</h2>
-</div>
-<div class="flex items-center space-x-md">
-</div>
-<div class="flex items-center space-x-sm cursor-pointer group">
-<div class="text-right">
-<p class="font-body-md font-semibold text-primary leading-tight"><?= htmlspecialchars($user['name'] ?? '') ?></p>
-<p class="text-[11px] text-on-surface-variant"><?= htmlspecialchars($user['job_title'] ?? $user['role'] ?? 'Employee') ?></p>
-</div>
-<img src="<?= !empty($user['avatar']) ? '../uploads/avatars/' . htmlspecialchars($user['avatar']) : 'https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg' ?>" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant object-cover" alt="">
-</div>
-</div>
+<?php $activePage = 'profile'; ?>
+<?php include __DIR__ . '/includes/sidebar_user.php'; ?>
+<!-- Top Navigation Bar -->
+<header id="mainHeader" class="fixed top-0 right-0 w-full h-10 bg-surface dark:bg-surface-dim shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+    <div class="flex items-center gap-lg flex-1">
+        <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
+    </div>
 </header>
 <!-- Main Canvas -->
-<main class="md:ml-sidebar-width pt-16 h-screen overflow-y-auto no-scrollbar bg-background">
+<main id="mainContent" class="pt-10 h-screen overflow-y-auto bg-background p-lg">
 <div class="p-lg max-w-[1600px] mx-auto">
 <!-- Page Header -->
 <div class="mb-xl">
@@ -430,7 +380,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_avatar'])) {
 </div>
 <!-- Additional Stats or Links (Footer-like) -->
 <footer class="mt-xl flex flex-col md:flex-row justify-between items-center text-body-sm text-on-surface-variant opacity-80 border-t border-outline-variant/30 pt-lg pb-xl">
-<p>© 202- HR Connect . All rights reserved.</p>
+<p>© <?php echo date('Y'); ?> HR Connect. All rights reserved.</p>
 <div class="flex space-x-lg mt-md md:mt-0">
 <a class="hover:text-primary transition-colors" href="#">Privacy Policy</a>
 <a class="hover:text-primary transition-colors" href="#">Terms of Service</a>
@@ -494,7 +444,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_avatar'])) {
 <option value="">—</option>
 <option value="male" <?= ($user['gender'] ?? '') === 'male' ? 'selected' : '' ?>>Male</option>
 <option value="female" <?= ($user['gender'] ?? '') === 'female' ? 'selected' : '' ?>>Female</option>
-<option value="other" <?= ($user['gender'] ?? '') === 'other' ? 'selected' : '' ?>>Other</option>
 </select>
 </div>
 </div>
@@ -559,47 +508,6 @@ if (e.target === this) closeEditModal();
     .zebra-row:hover {
       background-color: rgba(130, 247, 216, 0.05);
     }
-  </style>
-<script>
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main');
-    const header = document.querySelector('header');
-    const isOpen = sidebar.classList.contains('translate-x-0');
-    if (isOpen) {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (overlay) overlay.classList.add('hidden');
-        if (main) main.style.marginLeft = '0';
-        if (header) header.style.marginLeft = '0';
-    } else {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (overlay) overlay.classList.remove('hidden');
-        if (main) main.style.marginLeft = '';
-        if (header) header.style.marginLeft = '';
-    }
-}
-function setSidebarState() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main');
-    const header = document.querySelector('header');
-    if (window.innerWidth >= 768) {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (main) main.style.marginLeft = '';
-        if (header) header.style.marginLeft = '';
-    } else {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (main) main.style.marginLeft = '0';
-        if (header) header.style.marginLeft = '0';
-    }
-    if (overlay) overlay.classList.add('hidden');
-}
-setSidebarState();
-window.addEventListener('resize', setSidebarState);
-</script>
+    </style>
+<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

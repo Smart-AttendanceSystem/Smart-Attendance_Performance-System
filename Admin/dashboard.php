@@ -91,25 +91,34 @@ if ($attStmt) {
 $plRes = $conn->query("SELECT COUNT(*) FROM leave_requests WHERE LOWER(status) = 'pending'");
 if ($plRes) $pendingLeaves = (int) $plRes->fetch_row()[0];
 
-if ($conn->query("SHOW TABLES LIKE 'performance'")->num_rows > 0) {
-    $perfResult = $conn->query("SELECT month, attendance_percent, late_count FROM performance ORDER BY id DESC LIMIT 5");
-    if ($perfResult && $perfResult->num_rows > 0) {
-        while ($row = $perfResult->fetch_assoc()) {
-            $perfData[] = $row;
-        }
-    }
-}
-if (empty($perfData)) {
-    $perfData = [
-        ['month' => 'WK 01', 'attendance_percent' => 85, 'late_count' => 15],
-        ['month' => 'WK 02', 'attendance_percent' => 92, 'late_count' => 8],
-        ['month' => 'WK 03', 'attendance_percent' => 78, 'late_count' => 22],
-        ['month' => 'WK 04', 'attendance_percent' => 95, 'late_count' => 5],
-        ['month' => 'TODAY', 'attendance_percent' => 88, 'late_count' => 12],
+for ($i = 4; $i >= 0; $i--) {
+    $m = (int) date('m', strtotime("-$i months"));
+    $y = (int) date('Y', strtotime("-$i months"));
+    $monthLabel = date('M y', strtotime("-$i months"));
+
+    $perfStmt = $conn->prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN LOWER(status) = 'present' THEN 1 ELSE 0 END) AS present_count, SUM(CASE WHEN LOWER(status) = 'late' THEN 1 ELSE 0 END) AS late_count FROM attendance WHERE MONTH(date) = ? AND YEAR(date) = ?");
+    $perfStmt->bind_param('ii', $m, $y);
+    $perfStmt->execute();
+    $pRes = $perfStmt->get_result()->fetch_assoc();
+
+    $pTotal = (int) ($pRes['total'] ?? 0);
+    $pPresent = (int) ($pRes['present_count'] ?? 0);
+    $pLate = (int) ($pRes['late_count'] ?? 0);
+    $pAttPercent = $pTotal > 0 ? round(($pPresent / $pTotal) * 100) : 0;
+    $pLatePercent = $pTotal > 0 ? round(($pLate / $pTotal) * 100) : 0;
+
+    $perfData[] = [
+        'month' => $monthLabel,
+        'attendance_percent' => $pAttPercent,
+        'late_count' => $pLatePercent,
     ];
 }
 
+$adminUnreadCount = 0;
 if ($conn->query("SHOW TABLES LIKE 'notifications'")->num_rows > 0) {
+    $unreadRes = $conn->query("SELECT COUNT(*) FROM notifications WHERE (user_id = 1 OR user_id = 0) AND is_read = 0");
+    if ($unreadRes) $adminUnreadCount = (int) $unreadRes->fetch_row()[0];
+
     $notifResult = $conn->query("SELECT title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 5");
     if ($notifResult && $notifResult->num_rows > 0) {
         while ($row = $notifResult->fetch_assoc()) {
@@ -150,7 +159,11 @@ if (!empty($upcomingHolidays[0]['date'])) {
     $holidayMonthLabel = date('F Y', strtotime($upcomingHolidays[0]['date']));
 }
 
-$attRowsResult = $conn->query("SELECT u.name, d.name AS department_name, a.check_in, a.status FROM attendance a LEFT JOIN `user` u ON u.id = a.user_id LEFT JOIN departments d ON d.id = u.department_id WHERE DATE(a.date) = CURDATE() ORDER BY a.check_in ASC LIMIT 10");
+$attRowsQuery = "SELECT u.name, d.name AS department_name, a.check_in, a.status FROM attendance a LEFT JOIN `user` u ON u.id = a.user_id LEFT JOIN departments d ON d.id = u.department_id WHERE DATE(a.date) BETWEEN ? AND ? ORDER BY a.check_in ASC LIMIT 10";
+$attRowsStmt = $conn->prepare($attRowsQuery);
+$attRowsStmt->bind_param('ss', $rangeStart, $rangeEnd);
+$attRowsStmt->execute();
+$attRowsResult = $attRowsStmt->get_result();
 if ($attRowsResult && $attRowsResult->num_rows > 0) {
     while ($row = $attRowsResult->fetch_assoc()) {
         $attendanceRows[] = $row;
@@ -163,190 +176,68 @@ if ($attRowsResult && $attRowsResult->num_rows > 0) {
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>HR Dashboard</title>
+<!-- Preconnect for faster font loading -->
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <!-- Fonts -->
-<link href="https://fonts.googleapis.com" rel="preconnect"/>
-<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
 <!-- Material Symbols -->
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CDN (JIT) -->
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
+<script>
+tailwind.config = {
+    darkMode: "class",
+    theme: {
+        extend: {
             "colors": {
-                    "surface-container-high": "#e7e8e9",
-                    "on-primary-container": "#96a9be",
-                    "surface-bright": "#f8f9fa",
-                    "on-tertiary-fixed-variant": "#6c228c",
-                    "tertiary-container": "#611381",
-                    "error-container": "#ffdad6",
-                    "surface-dim": "#d9dadb",
-                    "secondary": "#006b58",
-                    "primary-fixed-dim": "#b5c8df",
-                    "on-background": "#191c1d",
-                    "inverse-surface": "#2e3132",
-                    "secondary-fixed-dim": "#65dabc",
-                    "secondary-container": "#82f7d8",
-                    "on-primary-fixed": "#091d2e",
-                    "error": "#ba1a1a",
-                    "surface-tint": "#4e6073",
-                    "on-secondary-fixed-variant": "#005142",
-                    "on-tertiary-container": "#d788f6",
-                    "on-primary": "#ffffff",
-                    "primary": "#162839",
-                    "tertiary-fixed-dim": "#ecb2ff",
-                    "on-tertiary": "#ffffff",
-                    "primary-container": "#2c3e50",
-                    "inverse-primary": "#b5c8df",
-                    "on-secondary-container": "#00725e",
-                    "secondary-fixed": "#82f7d8",
-                    "outline": "#74777d",
-                    "on-error-container": "#93000a",
-                    "on-surface": "#191c1d",
-                    "outline-variant": "#c4c6cd",
-                    "surface-container-lowest": "#ffffff",
-                    "tertiary-fixed": "#f8d8ff",
-                    "on-tertiary-fixed": "#320047",
-                    "surface-container": "#edeeef",
-                    "surface": "#f8f9fa",
-                    "surface-variant": "#e1e3e4",
-                    "on-secondary-fixed": "#002019",
-                    "primary-fixed": "#d1e4fb",
-                    "surface-container-highest": "#e1e3e4",
-                    "surface-container-low": "#f3f4f5",
-                    "on-error": "#ffffff",
-                    "background": "#f8f9fa",
-                    "inverse-on-surface": "#f0f1f2",
-                    "on-primary-fixed-variant": "#36485b",
-                    "on-secondary": "#ffffff",
-                    "tertiary": "#43005e",
-                    "on-surface-variant": "#43474c"
+                "surface-container-high":"#e7e8e9","on-primary-container":"#96a9be","surface-bright":"#f8f9fa","on-tertiary-fixed-variant":"#6c228c","tertiary-container":"#611381","error-container":"#ffdad6","surface-dim":"#d9dadb","secondary":"#006b58","primary-fixed-dim":"#b5c8df","on-background":"#191c1d","inverse-surface":"#2e3132","secondary-fixed-dim":"#65dabc","secondary-container":"#82f7d8","on-primary-fixed":"#091d2e","error":"#ba1a1a","surface-tint":"#4e6073","on-secondary-fixed-variant":"#005142","on-tertiary-container":"#d788f6","on-primary":"#ffffff","primary":"#162839","tertiary-fixed-dim":"#ecb2ff","on-tertiary":"#ffffff","primary-container":"#2c3e50","inverse-primary":"#b5c8df","on-secondary-container":"#00725e","secondary-fixed":"#82f7d8","outline":"#74777d","on-error-container":"#93000a","on-surface":"#191c1d","outline-variant":"#c4c6cd","surface-container-lowest":"#ffffff","tertiary-fixed":"#f8d8ff","on-tertiary-fixed":"#320047","surface-container":"#edeeef","surface":"#f8f9fa","surface-variant":"#e1e3e4","on-secondary-fixed":"#002019","primary-fixed":"#d1e4fb","surface-container-highest":"#e1e3e4","surface-container-low":"#f3f4f5","on-error":"#ffffff","background":"#f8f9fa","inverse-on-surface":"#f0f1f2","on-primary-fixed-variant":"#36485b","on-secondary":"#ffffff","tertiary":"#43005e","on-surface-variant":"#43474c"
             },
-            "borderRadius": {
-                    "DEFAULT": "0.125rem",
-                    "lg": "0.25rem",
-                    "xl": "0.5rem",
-                    "full": "0.75rem"
-            },
-            "spacing": {
-                    "xs": "8px",
-                    "lg": "24px",
-                    "xl": "32px",
-                    "md": "16px",
-                    "base": "4px",
-                    "gutter": "20px",
-                    "sm": "12px",
-                    "sidebar-width": "260px"
-            },
-            "fontFamily": {
-                    "headline-md": ["Hanken Grotesk"],
-                    "body-md": ["Inter"],
-                    "headline-sm": ["Hanken Grotesk"],
-                    "display-lg": ["Hanken Grotesk"],
-                    "label-caps": ["Inter"],
-                    "data-mono": ["JetBrains Mono"],
-                    "body-sm": ["Inter"],
-                    "body-lg": ["Inter"]
-            },
-            "fontSize": {
-                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
-                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
-                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
-                    "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
-                    "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
-                    "data-mono": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
-                    "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
-                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
-            }
-          },
+            "borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},
+            "spacing":{"xs":"8px","lg":"24px","xl":"32px","md":"16px","base":"4px","gutter":"20px","sm":"12px","sidebar-width":"260px"},
+            "fontFamily":{"headline-md":["Hanken Grotesk"],"body-md":["Inter"],"headline-sm":["Hanken Grotesk"],"display-lg":["Hanken Grotesk"],"label-caps":["Inter"],"data-mono":["JetBrains Mono"],"body-sm":["Inter"],"body-lg":["Inter"]},
+            "fontSize":{"headline-md":["24px",{"lineHeight":"32px","fontWeight":"600"}],"body-md":["14px",{"lineHeight":"20px","fontWeight":"400"}],"headline-sm":["20px",{"lineHeight":"28px","fontWeight":"600"}],"display-lg":["32px",{"lineHeight":"40px","letterSpacing":"-0.02em","fontWeight":"700"}],"label-caps":["11px",{"lineHeight":"16px","letterSpacing":"0.05em","fontWeight":"600"}],"data-mono":["12px",{"lineHeight":"16px","fontWeight":"500"}],"body-sm":["13px",{"lineHeight":"18px","fontWeight":"400"}],"body-lg":["16px",{"lineHeight":"24px","fontWeight":"400"}]}
         },
-      }
-    </script>
-<style>
-        body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
-        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
-        .chart-bar { transition: height 1s ease-in-out; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        body { opacity: 0; animation: fadeIn 0.3s ease-in forwards; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    </style>
+    },
+}
+</script>
+<!-- Shared dashboard layout CSS (sidebar positioning, no-blink) -->
+<link rel="stylesheet" href="../config/dashboard.css"/>
+<link rel="stylesheet" href="../config/theme.css"/>
+<script src="../config/theme.js"></script>
+<!-- Set sidebar state BEFORE body paints (eliminates layout blink) -->
+<script>
+(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);document.documentElement.className=c?'sidebar-closed':'sidebar-open';})();
+</script>
 </head>
 <body class="text-on-surface bg-background">
-<!-- Sidebar Overlay -->
-<div id="sidebarOverlay" class="fixed inset-0 bg-black/40 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
-<!-- Predicted SideNavBar Component -->
-<aside id="sidebar" class="fixed left-0 top-0 h-full w-[260px] bg-primary dark:bg-surface-container-highest border-r border-outline-variant dark:border-outline shadow-sm flex flex-col py-lg z-50 overflow-y-auto scrollbar-hide -translate-x-full transition-transform duration-300">
-<div class="px-md mb-xl">
-<h1 class="font-headline-md text-headline-md font-bold text-on-primary dark:text-inverse-primary tracking-tight"><?= htmlspecialchars($adminName) ?></h1>
-<p class="font-body-md text-body-md text-on-primary opacity-80">HR Management System</p>
-</div>
-<nav class="flex-grow space-y-1">
-<!-- Dashboard is Active -->
-<a class="flex items-center gap-md px-md py-sm border-l-4 border-secondary bg-primary-container text-on-primary cursor-pointer active:scale-95 transition-all" href="#">
-<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
-<span class="font-label-caps text-label-caps">Dashboard</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="employee_management.php">
-<span class="material-symbols-outlined" data-icon="groups">groups</span>
-<span class="font-label-caps text-label-caps">Employees</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="department_management.php">
-<span class="material-symbols-outlined" data-icon="domain">domain</span>
-<span class="font-label-caps text-label-caps">Departments</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="attendenceman.php">
-<span class="material-symbols-outlined" data-icon="fact_check">fact_check</span>
-<span class="font-label-caps text-label-caps">Attendance</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="leaverequest.php">
-<span class="material-symbols-outlined" data-icon="event_busy">event_busy</span>
-<span class="font-label-caps text-label-caps">Leave Requests</span>
-</a>
-</nav>
-<div class="mt-auto border-t border-on-primary-fixed-variant/20 pt-lg space-y-1">
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="admin_setting.php">
-<span class="material-symbols-outlined" data-icon="settings">settings</span>
-<span class="font-label-caps text-label-caps">Settings</span>
-</a>
-<a class="flex items-center gap-md px-md py-sm text-on-primary hover:text-on-primary hover:bg-primary-container/50 transition-colors duration-200 cursor-pointer active:scale-95" href="dashboard.php">
-<span class="material-symbols-outlined" data-icon="logout">logout</span>
-<span class="font-label-caps text-label-caps">Logout</span>
-</a>
-<div class="px-md mt-md flex items-center gap-sm">
-<img class="w-10 h-10 rounded-full border-2 border-secondary object-cover" alt="<?= htmlspecialchars($adminName) ?>" src="<?= $adminAvatarDisplay ?>"/>
-<div class="flex flex-col">
-<span class="text-on-primary font-semibold text-body-sm"><?= htmlspecialchars($adminName) ?></span>
-<span class="text-on-primary text-[10px]">Super Administrator</span>
-</div>
-</div>
-</div>
-</aside>
+<?php $activePage = 'dashboard'; ?>
+<?php include __DIR__ . '/includes/sidebar_admin.php'; ?>
 <!-- Predicted TopNavBar Component -->
-<header class="fixed top-0 right-0 w-full md:w-[calc(100%-260px)] h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+<header id="mainHeader" class="fixed top-0 right-0 w-full h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
 <div class="flex items-center gap-lg flex-1">
 <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
+<h2 class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-inverse-primary shrink-0"><?= htmlspecialchars($adminName) ?></h2>
 <div class="relative w-full max-w-md">
 <span class="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
-<input class="w-full bg-surface-container-low border-none rounded-full py-xs pl-xl pr-md text-body-md focus:ring-2 focus:ring-secondary/50" placeholder="Search employees, files, or reports..." type="text"/>
+<input id="dashboardSearchInput" name="search" class="w-full bg-surface-container-low border-none rounded-full py-xs pl-xl pr-md text-body-md focus:ring-2 focus:ring-secondary/50" placeholder="Search employees, files, or reports..." type="text"/>
 </div>
 </div>
 <div class="flex items-center gap-md">
 <button class="material-symbols-outlined p-xs rounded-full hover:bg-surface-container-low text-on-surface-variant relative transition-all">
                 notifications
-                <span class="absolute top-0 right-0 w-2 h-2 bg-error rounded-full"></span>
+                <?php if ($adminUnreadCount > 0): ?>
+                <span class="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-error text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1"><?= $adminUnreadCount > 99 ? '99+' : $adminUnreadCount ?></span>
+                <?php endif; ?>
 </button>
 <div class="h-8 w-[1px] bg-outline-variant mx-xs"></div>
 <a class="bg-secondary text-white px-md py-xs rounded-lg font-body-md flex items-center gap-xs hover:bg-secondary/90 active:scale-95 transition-all" href="employee_management.php">
 <span class="material-symbols-outlined !text-[18px]">person_add</span>
                 Add Employee
             </a>
-</div>
 </header>
 <!-- Main Content Canvas -->
-<main class="md:ml-[260px] pt-16 min-h-screen p-lg max-w-[1600px]">
+<main id="mainContent" class="pt-16 min-h-screen p-lg max-w-[1600px]">
 <div class="flex flex-col gap-lg">
 <!-- Welcome Header -->
 <section class="flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
@@ -375,7 +266,7 @@ if ($attRowsResult && $attRowsResult->num_rows > 0) {
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-sm border-t-4 border-secondary transition-transform hover:scale-[1.02]">
 <div class="flex justify-between items-start mb-sm">
 <span class="material-symbols-outlined text-secondary bg-secondary-container p-xs rounded-lg">calendar_today</span></div>
-<p class="font-label-caps text-label-caps text-on-surface-variant">ATTENDANCE RATE</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant">ATTENDANCE RATE <?= $period === 'month' ? 'THIS MONTH' : ($period === 'week' ? 'THIS WEEK' : 'TODAY') ?></p>
 <h3 class="font-display-lg text-display-lg text-primary mt-xs"><?= $attendanceRate ?>%</h3>
 <p class="text-[10px] text-on-surface-variant mt-xs italic">System average: <?= $attendanceRate ?>%</p>
 </div>
@@ -499,8 +390,8 @@ if ($attRowsResult && $attRowsResult->num_rows > 0) {
 <div class="xl:col-span-3 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
 <div class="p-lg border-b border-outline-variant flex justify-between items-center">
 <div>
-<h4 class="font-headline-sm text-headline-sm text-primary">Today's Attendance Detail</h4>
-<p class="text-body-sm text-on-surface-variant">Live feed of employee clock-ins</p>
+<h4 class="font-headline-sm text-headline-sm text-primary"><?= $period === 'today' ? "Today's" : ($period === 'week' ? "This Week's" : "This Month's") ?> Attendance Detail</h4>
+<p class="text-body-sm text-on-surface-variant">Live feed of employee clock-ins (<?= $rangeStart ?> to <?= $rangeEnd ?>)</p>
 </div>
 <button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-full">more_vert</button>
 </div>
@@ -535,7 +426,7 @@ if ($attRowsResult && $attRowsResult->num_rows > 0) {
 <?php endforeach; ?>
 <?php else: ?>
 <tr>
-<td class="px-lg py-md text-body-sm text-on-surface-variant" colspan="4">No attendance records for today yet.</td>
+<td class="px-lg py-md text-body-sm text-on-surface-variant" colspan="4">No attendance records for this <?= $period ?> yet.</td>
 </tr>
 <?php endif; ?>
 </tbody>
@@ -576,6 +467,29 @@ if ($attRowsResult && $attRowsResult->num_rows > 0) {
 </div>
 <!-- Micro-interaction Scripts -->
 <script>
+   
+document.getElementById('dashboardSearchInput').addEventListener('input', function() {
+    // 1. Grab what the user typed and make it lowercase
+    const searchString = this.value.toLowerCase().trim();
+    
+    // 2. Select all active data rows inside your data table body
+    const dataRows = document.querySelectorAll('table tbody tr');
+
+    dataRows.forEach(row => {
+        // 3. Scan the first column (Employee Name) and second column (Department/Details)
+        const cellName = row.querySelector('td:nth-child(1)')?.textContent.toLowerCase() || '';
+        const cellDetails = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
+
+        // 4. If a row contains the typed text, keep it; otherwise, hide it
+        if (cellName.includes(searchString) || cellDetails.includes(searchString)) {
+            row.style.display = ''; // Show row
+        } else {
+            row.style.display = 'none'; // Hide row
+        }
+    });
+});
+
+
 function openBroadcastModal() {
     document.getElementById('broadcastModal').style.display = 'flex';
     document.body.style.overflow = 'hidden';
@@ -592,47 +506,6 @@ document.getElementById('broadcastModal').addEventListener('click', function(e) 
 alert('<?= htmlspecialchars($broadcastMessage) ?>');
 <?php endif; ?>
 
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main');
-    const header = document.querySelector('header');
-    const isOpen = sidebar.classList.contains('translate-x-0');
-    if (isOpen) {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (overlay) overlay.classList.add('hidden');
-        if (main) main.style.marginLeft = '0';
-        if (header) header.style.width = '100%';
-    } else {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (overlay) overlay.classList.remove('hidden');
-        if (main) main.style.marginLeft = '';
-        if (header) header.style.width = '';
-    }
-}
-function setSidebarState() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    const main = document.querySelector('main');
-    const header = document.querySelector('header');
-    if (window.innerWidth >= 768) {
-        sidebar.classList.remove('-translate-x-full');
-        sidebar.classList.add('translate-x-0');
-        if (main) main.style.marginLeft = '';
-        if (header) header.style.width = '';
-    } else {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('-translate-x-full');
-        if (main) main.style.marginLeft = '0';
-        if (header) header.style.width = '100%';
-    }
-    if (overlay) overlay.classList.add('hidden');
-}
-setSidebarState();
-window.addEventListener('resize', setSidebarState);
-
 document.addEventListener('DOMContentLoaded', () => {
     const bars = document.querySelectorAll('.chart-bar');
     bars.forEach(bar => {
@@ -644,4 +517,5 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 </script>
+<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

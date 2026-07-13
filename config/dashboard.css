@@ -1,0 +1,148 @@
+/* ============================================================
+   Smart Attendance – Shared Dashboard Styles
+   Loaded once per page via <link rel="stylesheet">.
+   Contains: base resets, sidebar layout, typography tokens,
+   scrollbar hiding, and the transition-free sidebar positioning
+   that prevents the layout blink on navigation.
+   ============================================================ */
+
+/* --- Base Reset & Body ----------------------------------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f8f9fa;
+    color: #191c1d;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+}
+
+html.dark body {
+    background-color: #0b1125;
+    color: #e5e7eb;
+}
+
+html.dark .bg-background { background-color: #0b1125 !important; }
+html.dark .bg-white { background-color: #111827 !important; color: #e5e7eb !important; }
+html.dark .bg-gray-50 { background-color: #111827 !important; }
+html.dark .bg-gray-100 { background-color: #111827 !important; }
+html.dark .bg-gray-200 { background-color: #1f2937 !important; }
+html.dark .text-gray-800, html.dark .text-gray-700, html.dark .text-gray-600, html.dark .text-gray-500 { color: #d1d5db !important; }
+html.dark .text-gray-400, html.dark .text-gray-300 { color: #9ca3af !important; }
+html.dark .text-gray-200, html.dark .text-gray-100 { color: #cbd5e1 !important; }
+html.dark .border-gray-100, html.dark .border-gray-200, html.dark .border-gray-300, html.dark .border-gray-400 { border-color: #334155 !important; }
+html.dark .bg-surface { background-color: #111827 !important; }
+html.dark .bg-surface-container-lowest, html.dark .bg-surface-container, html.dark .bg-surface-container-high, html.dark .bg-surface-container-highest, html.dark .bg-surface-container-low { background-color: #111827 !important; }
+html.dark .bg-surface-bright { background-color: #19232f !important; }
+html.dark .text-on-surface { color: #e5e7eb !important; }
+html.dark .text-on-background { color: #e5e7eb !important; }
+html.dark .border-outline-variant { border-color: #334155 !important; }
+html.dark .bg-secondary-container { background-color: #064a3d !important; }
+html.dark .text-secondary { color: #7dd3fc !important; }
+
+/* --- Material Symbols baseline --------------------------- */
+.material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle;
+}
+
+/* --- Scrollbar hide utility ------------------------------ */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ===========================================================
+   SIDEBAR + MAIN CONTENT LAYOUT
+   ===========================================================
+   The sidebar is position:fixed.  The main content and header
+   receive a left-margin / left offset to make room.
+
+   ** CRITICAL FOR NO-BLINK **:
+   We use a <script> in <head> that writes a CSS class onto <html>
+   BEFORE the body paints.  The rules below react to that class
+   so the correct layout is applied on the very first paint frame.
+   =========================================================== */
+
+/* --- Sidebar base (shared by admin & user) --------------- */
+#sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 260px;
+    z-index: 50;
+    overflow-y: auto;
+    will-change: transform;
+    transform: translateX(-100%);          /* hidden by default */
+    transition: transform 0.2s ease;       /* only animated on toggle */
+}
+
+/* --- Header & main content base -------------------------- */
+#mainHeader,
+#mainContent {
+    transition: margin-left 0.2s ease, left 0.2s ease, width 0.2s ease;
+}
+
+/* ===========================================================
+   INITIAL-STATE CLASS  (written by inline <script> in <head>)
+   ===========================================================
+   class="sidebar-open"  → sidebar visible, content shifted
+   class="sidebar-closed"→ sidebar hidden, content full-width
+   =========================================================== */
+
+/* --- OPEN state ------------------------------------------ */
+html.sidebar-open #sidebar {
+    transform: translateX(0) !important;
+}
+html.sidebar-open #mainHeader {
+    left: 260px !important;
+    width: calc(100% - 260px) !important;
+}
+html.sidebar-open #mainContent {
+    margin-left: 260px !important;
+}
+
+/* --- CLOSED state ---------------------------------------- */
+html.sidebar-closed #sidebar {
+    transform: translateX(-100%) !important;
+}
+html.sidebar-closed #mainHeader {
+    left: 0 !important;
+    width: 100% !important;
+}
+html.sidebar-closed #mainContent {
+    margin-left: 0 !important;
+}
+
+/* --- Mobile: always closed on load ----------------------- */
+@media (max-width: 767px) {
+    html.sidebar-open #sidebar {
+        transform: translateX(-100%) !important;
+    }
+    html.sidebar-open #mainHeader,
+    html.sidebar-closed #mainHeader {
+        left: 0 !important;
+        width: 100% !important;
+    }
+    html.sidebar-open #mainContent,
+    html.sidebar-closed #mainContent {
+        margin-left: 0 !important;
+    }
+}
+
+/* --- Overlay (mobile only) ------------------------------- */
+#sidebarOverlay {
+    position: fixed;
+    inset: 0;
+    display: none;                       /* hidden by default */
+}
+html.sidebar-open #sidebarOverlay {
+    display: block;
+}
+@media (min-width: 768px) {
+    #sidebarOverlay { display: none !important; }
+}
+
+/* --- Chart bar animation --------------------------------- */
+.chart-bar { transition: height 1s ease-in-out; }
+
