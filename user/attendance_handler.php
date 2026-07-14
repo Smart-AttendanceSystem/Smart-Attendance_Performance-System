@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/company_location.php';
 
 header('Content-Type: application/json');
 
@@ -12,14 +13,26 @@ if ($userId <= 0) {
 
 $action = $_POST['action'] ?? '';
 
+// Get user's IP address as location
+function getUserLocation() {
+    if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
+        return $_SERVER['HTTP_CLIENT_IP'];
+    } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        return explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0];
+    } else {
+        return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+    }
+}
+$userLocation = getUserLocation();
+
 if ($action === 'checkin') {
     $existing = $conn->query("SELECT id FROM attendance WHERE user_id = $userId AND date = CURDATE() LIMIT 1");
     if ($existing && $existing->num_rows > 0) {
         echo json_encode(['success' => false, 'message' => 'Already checked in today']);
         exit;
     }
-    $stmt = $conn->prepare("INSERT INTO attendance (user_id, date, check_in, check_out, status) VALUES (?, CURDATE(), CURTIME(), '00:00:00', IF(CURTIME() > '09:00:00', 'Late', 'Present'))");
-    $stmt->bind_param("i", $userId);
+    $stmt = $conn->prepare("INSERT INTO attendance (user_id, date, check_in, check_out, status, location) VALUES (?, CURDATE(), CURTIME(), '00:00:00', IF(CURTIME() > '09:15:00', 'Late', 'Present'), ?)");
+    $stmt->bind_param("is", $userId, $userLocation);
     if ($stmt->execute()) {
         $ciRes = $conn->query("SELECT check_in, status FROM attendance WHERE user_id = $userId AND date = CURDATE() LIMIT 1");
         $ciRow = $ciRes->fetch_assoc();

@@ -10,6 +10,8 @@ if ($userId <= 0) {
     exit;
 }
 
+$conn->query("UPDATE `user` SET last_activity = NOW() WHERE id = $userId");
+
 $currentMonth = (int) date('m');
 $currentYear = (int) date('Y');
 $today = date('Y-m-d');
@@ -171,14 +173,13 @@ $lateBadgeClass = $lateDays > 0 ? 'border-error' : 'border-secondary';
         body { font-family: 'Inter', sans-serif; }
     </style>
 </head>
-<body class="bg-background text-on-background overflow-hidden">
+<body class="bg-background text-on-background">
 <?php $activePage = 'attendance'; ?>
 <?php include __DIR__ . '/includes/sidebar_user.php'; ?>
 
 <!-- Top Navigation Bar -->
-<header id="mainHeader" class="fixed top-0 right-0 w-full h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+<header id="mainHeader" class="fixed top-0 h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center z-40 transition-all duration-200">
     <div class="flex items-center gap-lg flex-1">
-        <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
         <div class="flex items-center gap-sm bg-surface-container-low rounded-full px-md py-xs border border-outline-variant">
             <span class="material-symbols-outlined text-on-surface-variant text-lg">schedule</span>
             <span id="liveClock" class="font-data-mono text-data-mono text-on-surface font-bold"></span>
@@ -524,6 +525,5 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 </script>
-<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body>
 </html>

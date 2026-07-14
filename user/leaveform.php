@@ -11,6 +11,8 @@ if ($userId <= 0) {
     exit;
 }
 
+$conn->query("UPDATE `user` SET last_activity = NOW() WHERE id = $userId");
+
 $message = '';
 $messageType = '';
 
@@ -276,10 +278,9 @@ $empAvatar = $empProfile['avatar'] ?? '';
     <?php $activePage = 'leave_request'; ?>
     <?php include __DIR__ . '/includes/sidebar_user.php'; ?>
     <!-- Top Navigation Bar -->
-    <header id="mainHeader" class="fixed top-0 right-0 w-full h-10 bg-surface dark:bg-surface-dim  shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+    <header id="mainHeader" class="fixed top-0 h-10 bg-surface dark:bg-surface-dim  shadow-sm flex justify-between items-center z-40 transition-all duration-200">
         <div class="flex items-center gap-lg flex-1">
-            <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
-        </div>
+            </div>
        
     </header>
     <!-- Main Content -->
@@ -413,7 +414,7 @@ $empAvatar = $empProfile['avatar'] ?? '';
             if (len > 500) this.value = this.value.substring(0, 500);
         });
     </script>
-    <?php include __DIR__ . '/../config/sidebar_js.php'; ?>
+
 </body>
 
 </html>

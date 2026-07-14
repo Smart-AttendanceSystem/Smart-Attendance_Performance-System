@@ -11,6 +11,8 @@ if ($userId <= 0) {
     exit;
 }
 
+$conn->query("UPDATE `user` SET last_activity = NOW() WHERE id = $userId");
+
 $hasLeaveType = $conn->query("SHOW COLUMNS FROM leave_requests LIKE 'leave_type'")->num_rows > 0;
 $typeField = $hasLeaveType ? 'lr.leave_type' : "'Leave'";
 $leaveRequests = [];
@@ -135,23 +137,22 @@ $totalEntries = count($leaveRequests);
         },
       }
     </script>
-<link rel="stylesheet" href="../config/dashboard.css"/>    <link rel="stylesheet" href="../config/theme.css"/>
-    <script src="../config/theme.js"></script><script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
+<link rel="stylesheet" href="../config/dashboard.css"/>
+<link rel="stylesheet" href="../config/theme.css"/>
+<script src="../config/theme.js"></script>
+<script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var r=document.documentElement;r.classList.remove('sidebar-open','sidebar-closed');r.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
 <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
-        .chart-bar { transition: height 1s ease-in-out; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        body { font-family: 'Inter', sans-serif; }
     </style>
 </head>
 <body class="text-on-surface bg-background">
 <?php $activePage = 'leave_status'; ?>
 <?php include __DIR__ . '/includes/sidebar_user.php'; ?>
 <!-- Top Navigation Bar -->
-<header id="mainHeader" class="fixed top-0 right-0 w-full h-10 bg-surface dark:bg-surface-dim  shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+<header id="mainHeader" class="fixed top-0 h-10 bg-surface dark:bg-surface-dim  shadow-sm flex justify-between items-center z-40 transition-all duration-200">
     <div class="flex items-center gap-lg flex-1">
-        <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
-    </div>
+        </div>
 </header>
 <main id="mainContent" class="pt-10 h-screen overflow-y-auto bg-background p-lg">
 <!-- Content Canvas -->
@@ -263,5 +264,4 @@ $rowClass = $i % 2 === 1 ? 'bg-surface-container-low/30' : '';
             // Ripple effect logic could be added here for buttons
         });
     </script>
-<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

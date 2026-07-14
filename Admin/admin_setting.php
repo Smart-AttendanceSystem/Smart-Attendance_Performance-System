@@ -1,9 +1,12 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/company_location.php';
 
 $adminId = $_SESSION['user_id'] ?? 0;
 $role = $_SESSION['user_role'] ?? '';
+$companyName = COMPANY_NAME;
+$companyLocation = COMPANY_LOCATION;
 
 if ($adminId <= 0) {
     header('Location: ../auth/login.php');
@@ -49,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
             $dest = $uploadDir . $filename;
             if (move_uploaded_file($_FILES['avatar']['tmp_name'], $dest)) {
-                $avatarPath = '../uploads/avatars/' . $filename;
+                $avatarPath = 'uploads/avatars/' . $filename;
                 $profileCheck = $conn->prepare("SELECT id FROM employee_profiles WHERE user_id = ?");
                 $profileCheck->bind_param('i', $adminId);
                 $profileCheck->execute();
@@ -395,7 +398,6 @@ if ($employeesResult && $employeesResult->num_rows > 0) {
     <link rel="stylesheet" href="../config/dashboard.css"/>
     <link rel="stylesheet" href="../config/theme.css"/>
     <script src="../config/theme.js"></script>
-    <script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
     <style>
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -416,21 +418,17 @@ if ($employeesResult && $employeesResult->num_rows > 0) {
             border-radius: 10px;
         }
     </style>
+<!-- Set sidebar state BEFORE body paints (eliminates layout blink) -->
+<script>
+(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var r=document.documentElement;r.classList.remove('sidebar-open','sidebar-closed');r.classList.add(c?'sidebar-closed':'sidebar-open');})();
+</script>
 </head>
 
 <body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
     <?php $activePage = 'settings'; ?>
     <?php include __DIR__ . '/includes/sidebar_admin.php'; ?>
-    <header id="mainHeader" class="fixed top-0 right-0 w-full h-16 bg-surface flex justify-between items-center px-lg h-16 z-40 border-b border-outline-variant shadow-sm">
-        <div class="flex items-center gap-md">
-            <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
-            <span class="font-headline-sm text-headline-sm font-semibold text-primary">HR Admin</span>
- 
-           
-        </div>
-        
-    </header>
-    <main id="mainContent" class="pt-16 min-h-screen bg-background">
+  
+    <main id="mainContent" class="pt-3 min-h-screen bg-background">
         <div class="max-w-[1600px] mx-auto p-lg">
             <div class="mb-xl">
                 <h2 class="font-display-lg text-display-lg text-primary">Settings &amp; Security</h2>
@@ -446,7 +444,7 @@ if ($employeesResult && $employeesResult->num_rows > 0) {
                     <div class="flex items-center gap-lg mb-lg">
                         <div class="relative flex-shrink-0">
                             <div class="w-20 h-20 rounded-full border-4 border-surface-container overflow-hidden">
-                                <img src="<?= !empty($admin['avatar']) ? htmlspecialchars($admin['avatar']) : $defaultAvatar ?>" class="w-full h-full object-cover" alt="Admin Photo" />
+                                <img src="<?= !empty($admin['avatar']) ? '../' . htmlspecialchars($admin['avatar']) : $defaultAvatar ?>" class="w-full h-full object-cover" alt="Admin Photo" />
                             </div>
                             <button type="button" class="absolute -bottom-1 -right-1 bg-surface border border-outline-variant w-7 h-7 rounded-full flex items-center justify-center hover:bg-surface-container shadow-sm transition-colors cursor-pointer" onclick="document.getElementById('avatar-file-input').click()">
                                 <span class="material-symbols-outlined text-sm">photo_camera</span>
@@ -772,7 +770,6 @@ if ($employeesResult && $employeesResult->num_rows > 0) {
         });
       
     </script>
-    <?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body>
 
 </html>

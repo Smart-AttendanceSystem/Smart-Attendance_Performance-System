@@ -8,6 +8,23 @@ if ($role !== 'admin') {
     exit;
 }
 
+// Handle approve/deny actions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+    $requestId = (int) ($_POST['request_id'] ?? 0);
+
+    if ($requestId > 0 && in_array($action, ['approve', 'deny'])) {
+        $newStatus = $action === 'approve' ? 'approved' : 'rejected';
+        $stmt = $conn->prepare("UPDATE leave_requests SET status = ? WHERE id = ?");
+        $stmt->bind_param('si', $newStatus, $requestId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    header('Location: leaverequest.php?tab=' . ($_GET['tab'] ?? 'pending'));
+    exit;
+}
+
 $adminId = (int) ($_SESSION['user_id'] ?? 0);
 $adminName = $_SESSION['user_name'] ?? 'Admin';
 $adminAvatar = $_SESSION['user_avatar'] ?? '';
@@ -250,7 +267,6 @@ if ($searchTerm !== '') {
 <link rel="stylesheet" href="../config/dashboard.css"/>
 <link rel="stylesheet" href="../config/theme.css"/>
 <script src="../config/theme.js"></script>
-<script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
 <style>
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -271,6 +287,10 @@ if ($searchTerm !== '') {
             background-color: #006b58;
         }
     </style>
+<!-- Set sidebar state BEFORE body paints (eliminates layout blink) -->
+<script>
+(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var r=document.documentElement;r.classList.remove('sidebar-open','sidebar-closed');r.classList.add(c?'sidebar-closed':'sidebar-open');})();
+</script>
 </head>
 <body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
 <?php $activePage = 'leave_requests'; ?>
@@ -278,10 +298,9 @@ if ($searchTerm !== '') {
 <!-- Main Content Shell -->
 <main id="mainContent" class="min-h-screen">
 <!-- TopNavBar Shell -->
-<header id="mainHeader" class="fixed top-0 right-0 w-full h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40">
+<header id="mainHeader" class="fixed top-0 h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center z-40">
 <div class="flex items-center gap-lg">
-<button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
-<h2 class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-inverse-primary">HR Admin</h2>
+<h2 class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-inverse-primary">Admin</h2>
 <form class="relative w-80" method="get" action="leaverequest.php">
 <input type="hidden" name="tab" value="<?= htmlspecialchars($tab) ?>" />
 <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
@@ -413,12 +432,20 @@ $colorKey = abs(crc32($req['name'] ?? $req['id'])) % count($colors);
 </td>
 <td class="px-lg py-md text-right">
 <div class="flex items-center justify-end gap-xs opacity-0 group-hover:opacity-100 transition-opacity">
-<button class="p-1.5 text-secondary hover:bg-secondary/10 rounded-lg transition-all" title="Approve">
+<form method="POST" style="display:inline;">
+<input type="hidden" name="action" value="approve">
+<input type="hidden" name="request_id" value="<?= (int) $req['id'] ?>">
+<button type="submit" class="p-1.5 text-secondary hover:bg-secondary/10 rounded-lg transition-all" title="Approve" onclick="return confirm('Approve this leave request?')">
 <span class="material-symbols-outlined text-[20px]">check_circle</span>
 </button>
-<button class="p-1.5 text-error hover:bg-error/10 rounded-lg transition-all" title="Reject">
+</form>
+<form method="POST" style="display:inline;">
+<input type="hidden" name="action" value="deny">
+<input type="hidden" name="request_id" value="<?= (int) $req['id'] ?>">
+<button type="submit" class="p-1.5 text-error hover:bg-error/10 rounded-lg transition-all" title="Reject" onclick="return confirm('Reject this leave request?')">
 <span class="material-symbols-outlined text-[20px]">cancel</span>
 </button>
+</form>
 <button class="p-1.5 text-on-surface-variant hover:bg-surface-container-high rounded-lg transition-all">
 <span class="material-symbols-outlined text-[20px]">more_vert</span>
 </button>
@@ -531,5 +558,4 @@ $tabParam = 'tab=' . $tab;
             searchInput.parentElement.classList.remove('ring-2', 'ring-secondary/20');
         });
     </script>
-<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

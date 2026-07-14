@@ -10,20 +10,28 @@ if ($userId <= 0) {
     exit;
 }
 
+$conn->query("UPDATE `user` SET last_activity = NOW() WHERE id = $userId");
+
+$today = date('Y-m-d');
 $currentMonth = (int) date('m');
 $currentYear = (int) date('Y');
-$today = date('Y-m-d');
 $monthName = date('F Y');
+$dayName = date('l');
+$monthDayYear = date('M d, Y');
 
+// --- Today's attendance ---
+$todayAtt = null;
+$todayRes = $conn->query("SELECT check_in, check_out, status FROM attendance WHERE user_id = $userId AND date = '$today' LIMIT 1");
+if ($todayRes && $todayRes->num_rows > 0) {
+    $todayAtt = $todayRes->fetch_assoc();
+}
+$hasCheckIn = $todayAtt && $todayAtt['check_in'] && $todayAtt['check_in'] !== '00:00:00';
+$hasCheckOut = $todayAtt && $todayAtt['check_out'] && $todayAtt['check_out'] !== '00:00:00';
+
+// --- Monthly stats ---
 $presentDays = 0;
 $lateDays = 0;
 $leaveDays = 0;
-$workingDays = 0;
-$overtimeHours = 0;
-$todayAttendance = null;
-$notifications = [];
-$calendarRecords = [];
-$leaveRecords = [];
 
 $r = $conn->query("SELECT COUNT(*) FROM attendance WHERE user_id = $userId AND LOWER(status) = 'present' AND MONTH(date) = $currentMonth AND YEAR(date) = $currentYear");
 if ($r) $presentDays = (int) $r->fetch_row()[0];
@@ -34,446 +42,483 @@ if ($r) $lateDays = (int) $r->fetch_row()[0];
 $r = $conn->query("SELECT COUNT(*) FROM leave_requests WHERE user_id = $userId AND LOWER(status) = 'approved' AND MONTH(start_date) = $currentMonth AND YEAR(start_date) = $currentYear");
 if ($r) $leaveDays = (int) $r->fetch_row()[0];
 
-$r = $conn->query("SELECT COUNT(*) FROM attendance WHERE user_id = $userId AND LOWER(status) IN ('present','late') AND MONTH(date) = $currentMonth AND YEAR(date) = $currentYear");
-if ($r) $workingDays = (int) $r->fetch_row()[0];
+$workingDays = $presentDays + $lateDays;
 
-$r = $conn->query("SELECT COALESCE(SUM(hours), 0) FROM overtime WHERE employee_id = $userId AND MONTH(ot_date) = $currentMonth AND YEAR(ot_date) = $currentYear");
-if ($r) $overtimeHours = round((float) $r->fetch_row()[0], 1);
+// --- Notifications ---
+$notifications = [];
+$notifCount = 0;
+$notifTable = $conn->query("SHOW TABLES LIKE 'notifications'");
+if ($notifTable && $notifTable->num_rows > 0) {
+    $unreadRes = $conn->query("SELECT COUNT(*) FROM notifications WHERE user_id = $userId AND is_read = 0");
+    if ($unreadRes) $notifCount = (int) $unreadRes->fetch_row()[0];
 
-$userInfo = $conn->query("SELECT u.name, ep.position, ep.avatar FROM `user` u LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.id = $userId");
-$uData = $userInfo ? $userInfo->fetch_assoc() : null;
-$dbName = $uData['name'] ?? $userName;
-$dbPosition = $uData['position'] ?? 'Employee';
-$empAvatar = $uData['avatar'] ?? '';
-
-$todayAttRes = $conn->query("SELECT check_in, check_out, status FROM attendance WHERE user_id = $userId AND date = '$today' LIMIT 1");
-if ($todayAttRes && $todayAttRes->num_rows > 0) {
-    $todayAttendance = $todayAttRes->fetch_assoc();
-}
-
-$notifRes = $conn->query("SELECT title, message, created_at, type FROM notifications WHERE user_id = $userId OR user_id = 0 ORDER BY created_at DESC LIMIT 5");
-if ($notifRes && $notifRes->num_rows > 0) {
-    while ($row = $notifRes->fetch_assoc()) {
-        $notifications[] = $row;
+    $notifResult = $conn->query("SELECT id, title, message, type, created_at FROM notifications WHERE user_id = $userId OR user_id = 0 ORDER BY created_at DESC LIMIT 5");
+    if ($notifResult && $notifResult->num_rows > 0) {
+        while ($row = $notifResult->fetch_assoc()) {
+            $notifications[] = $row;
+        }
     }
 }
 
-$userUnreadCount = 0;
-$unreadRes = $conn->query("SELECT COUNT(*) FROM notifications WHERE (user_id = $userId OR user_id = 0) AND is_read = 0");
-if ($unreadRes) $userUnreadCount = (int) $unreadRes->fetch_row()[0];
+// --- Leave requests (recent 4) ---
+$hasLeaveType = $conn->query("SHOW COLUMNS FROM leave_requests LIKE 'leave_type'")->num_rows > 0;
+$typeField = $hasLeaveType ? 'lr.leave_type' : "'Leave'";
+$leaveRequests = [];
+$lrRes = $conn->query("SELECT $typeField AS leave_type, lr.start_date, lr.end_date, lr.status FROM leave_requests lr WHERE lr.user_id = $userId ORDER BY lr.id DESC LIMIT 4");
+if ($lrRes && $lrRes->num_rows > 0) {
+    while ($row = $lrRes->fetch_assoc()) {
+        $leaveRequests[] = $row;
+    }
+}
 
+// --- Calendar data (dot colors per day) ---
+$calendarData = [];
 $calRes = $conn->query("SELECT DAY(date) AS day, status FROM attendance WHERE user_id = $userId AND MONTH(date) = $currentMonth AND YEAR(date) = $currentYear");
 if ($calRes && $calRes->num_rows > 0) {
     while ($row = $calRes->fetch_assoc()) {
-        $calendarRecords[(int) $row['day']] = strtolower($row['status']);
+        $calendarData[(int) $row['day']] = strtolower($row['status']);
     }
 }
 
-$leaveRes = $conn->query("SELECT lr.reason, lr.start_date, lr.status FROM leave_requests lr WHERE lr.user_id = $userId ORDER BY lr.start_date DESC LIMIT 5");
-if ($leaveRes && $leaveRes->num_rows > 0) {
-    while ($row = $leaveRes->fetch_assoc()) {
-        $leaveRecords[] = $row;
-    }
-}
-
-$dashCheckInRaw = $todayAttendance['check_in'] ?? null;
-$dashCheckOutRaw = $todayAttendance['check_out'] ?? null;
-$dashHasCheckIn = $dashCheckInRaw && $dashCheckInRaw !== '00:00:00';
-$dashHasCheckOut = $dashCheckOutRaw && $dashCheckOutRaw !== '00:00:00';
+// --- User display name initial ---
+$userInitial = strtoupper(substr($userName, 0, 1));
 ?>
 <!DOCTYPE html>
 <html class="light" lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <title>Dashboard</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-    <script>
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "surface-container-high": "#e7e8e9",
-                        "on-primary-container": "#96a9be",
-                        "surface-bright": "#f8f9fa",
-                        "on-tertiary-fixed-variant": "#6c228c",
-                        "tertiary-container": "#611381",
-                        "error-container": "#ffdad6",
-                        "surface-dim": "#d9dadb",
-                        "secondary": "#006b58",
-                        "primary-fixed-dim": "#b5c8df",
-                        "on-background": "#191c1d",
-                        "inverse-surface": "#2e3132",
-                        "secondary-fixed-dim": "#65dabc",
-                        "secondary-container": "#82f7d8",
-                        "on-primary-fixed": "#091d2e",
-                        "error": "#ba1a1a",
-                        "surface-tint": "#4e6073",
-                        "on-secondary-fixed-variant": "#005142",
-                        "on-tertiary-container": "#d788f6",
-                        "on-primary": "#ffffff",
-                        "primary": "#162839",
-                        "tertiary-fixed-dim": "#ecb2ff",
-                        "on-tertiary": "#ffffff",
-                        "primary-container": "#2c3e50",
-                        "inverse-primary": "#b5c8df",
-                        "on-secondary-container": "#00725e",
-                        "secondary-fixed": "#82f7d8",
-                        "outline": "#74777d",
-                        "on-error-container": "#93000a",
-                        "on-surface": "#191c1d",
-                        "outline-variant": "#c4c6cd",
-                        "surface-container-lowest": "#ffffff",
-                        "tertiary-fixed": "#f8d8ff",
-                        "on-tertiary-fixed": "#320047",
-                        "surface-container": "#edeeef",
-                        "surface": "#f8f9fa",
-                        "surface-variant": "#e1e3e4",
-                        "on-secondary-fixed": "#002019",
-                        "primary-fixed": "#d1e4fb",
-                        "surface-container-highest": "#e1e3e4",
-                        "surface-container-low": "#f3f4f5",
-                        "on-error": "#ffffff",
-                        "background": "#f8f9fa",
-                        "inverse-on-surface": "#f0f1f2",
-                        "on-primary-fixed-variant": "#36485b",
-                        "on-secondary": "#ffffff",
-                        "tertiary": "#43005e",
-                        "on-surface-variant": "#43474c"
-                    },
-                    "borderRadius": { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
-                    "spacing": { "xs": "8px", "lg": "24px", "xl": "32px", "md": "16px", "base": "4px", "gutter": "20px", "sm": "12px", "sidebar-width": "260px" },
-                    "fontFamily": {
-                        "headline-md": ["Hanken Grotesk"],
-                        "body-md": ["Inter"],
-                        "headline-sm": ["Hanken Grotesk"],
-                        "display-lg": ["Hanken Grotesk"],
-                        "label-caps": ["Inter"],
-                        "data-mono": ["JetBrains Mono"],
-                        "body-sm": ["Inter"],
-                        "body-lg": ["Inter"]
-                    },
-                    "fontSize": {
-                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
-                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
-                        "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
-                        "display-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
-                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
-                        "data-mono": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
-                        "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
-                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
-                    }
-                }
-            }
-        }
-    </script>
-    <link rel="stylesheet" href="../config/dashboard.css"/>
-    <link rel="stylesheet" href="../config/theme.css"/>
-    <script src="../config/theme.js"></script>
-    <script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);document.documentElement.className=c?'sidebar-closed':'sidebar-open';})();</script>
-    <style>
-        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
-        body { font-family: 'Inter', sans-serif; }
-    </style>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Smart Attendance Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+tailwind.config = {
+    darkMode: "class",
+    theme: {
+        extend: {
+            "colors": {
+                "surface-container-high":"#e7e8e9","on-primary-container":"#96a9be","surface-bright":"#f8f9fa","on-tertiary-fixed-variant":"#6c228c","tertiary-container":"#611381","error-container":"#ffdad6","surface-dim":"#d9dadb","secondary":"#006b58","primary-fixed-dim":"#b5c8df","on-background":"#191c1d","inverse-surface":"#2e3132","secondary-fixed-dim":"#65dabc","secondary-container":"#82f7d8","on-primary-fixed":"#091d2e","error":"#ba1a1a","surface-tint":"#4e6073","on-secondary-fixed-variant":"#005142","on-tertiary-container":"#d788f6","on-primary":"#ffffff","primary":"#162839","tertiary-fixed-dim":"#ecb2ff","on-tertiary":"#ffffff","primary-container":"#2c3e50","inverse-primary":"#b5c8df","on-secondary-container":"#00725e","secondary-fixed":"#82f7d8","outline":"#74777d","on-error-container":"#93000a","on-surface":"#191c1d","outline-variant":"#c4c6cd","surface-container-lowest":"#ffffff","tertiary-fixed":"#f8d8ff","on-tertiary-fixed":"#320047","surface-container":"#edeeef","surface":"#f8f9fa","surface-variant":"#e1e3e4","on-secondary-fixed":"#002019","primary-fixed":"#d1e4fb","surface-container-highest":"#e1e3e4","surface-container-low":"#f3f4f5","on-error":"#ffffff","background":"#f8f9fa","inverse-on-surface":"#f0f1f2","on-primary-fixed-variant":"#36485b","on-secondary":"#ffffff","tertiary":"#43005e","on-surface-variant":"#43474c"
+            },
+            "borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},
+            "spacing":{"xs":"8px","lg":"24px","xl":"32px","md":"16px","base":"4px","gutter":"20px","sm":"12px","sidebar-width":"260px"},
+            "fontFamily":{"headline-md":["Hanken Grotesk"],"body-md":["Inter"],"headline-sm":["Hanken Grotesk"],"display-lg":["Hanken Grotesk"],"label-caps":["Inter"],"data-mono":["JetBrains Mono"],"body-sm":["Inter"],"body-lg":["Inter"]},
+            "fontSize":{"headline-md":["24px",{"lineHeight":"32px","fontWeight":"600"}],"body-md":["14px",{"lineHeight":"20px","fontWeight":"400"}],"headline-sm":["20px",{"lineHeight":"28px","fontWeight":"600"}],"display-lg":["32px",{"lineHeight":"40px","letterSpacing":"-0.02em","fontWeight":"700"}],"label-caps":["11px",{"lineHeight":"16px","letterSpacing":"0.05em","fontWeight":"600"}],"data-mono":["12px",{"lineHeight":"16px","fontWeight":"500"}],"body-sm":["13px",{"lineHeight":"18px","fontWeight":"400"}],"body-lg":["16px",{"lineHeight":"24px","fontWeight":"400"}]}
+        },
+    },
+}
+</script>
+<link rel="stylesheet" href="../config/dashboard.css"/>
+<link rel="stylesheet" href="../config/theme.css"/>
+<script src="../config/theme.js"></script>
+<script>
+(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var r=document.documentElement;r.classList.remove('sidebar-open','sidebar-closed');r.classList.add(c?'sidebar-closed':'sidebar-open');})();
+</script>
+<style>
+.material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+</style>
 </head>
-<body class="bg-background text-on-background overflow-hidden">
+<body class="text-on-surface bg-background">
 <?php $activePage = 'dashboard'; ?>
 <?php include __DIR__ . '/includes/sidebar_user.php'; ?>
 
-<!-- Top Navigation Bar -->
-<header id="mainHeader" class="fixed top-0 right-0 w-full h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+<!-- Top Bar -->
+<header id="mainHeader"
+    class="fixed top-0 h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center z-40 transition-all duration-200">
     <div class="flex items-center gap-lg flex-1">
-        <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
         <div class="flex items-center gap-sm bg-surface-container-low rounded-full px-md py-xs border border-outline-variant">
             <span class="material-symbols-outlined text-on-surface-variant text-lg">schedule</span>
             <span id="liveClock" class="font-data-mono text-data-mono text-on-surface font-bold"></span>
         </div>
     </div>
-    <div class="flex items-center gap-md">
-        <button class="material-symbols-outlined p-xs rounded-full hover:bg-surface-container-low text-on-surface-variant relative transition-all">
-            notifications
-            <?php if ($userUnreadCount > 0): ?>
-            <span class="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-error text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1"><?= $userUnreadCount > 99 ? '99+' : $userUnreadCount ?></span>
-            <?php endif; ?>
-        </button>
-    </div>
-</header>
-
-<!-- Main Canvas -->
-<main id="mainContent" class="pt-16 h-screen overflow-y-auto bg-background">
-    <div class="p-lg max-w-[1600px] mx-auto space-y-lg">
-
-        <!-- Page Header -->
-        <section>
-            <h1 class="font-headline-md text-headline-md text-primary">Welcome back, <?= htmlspecialchars($dbName) ?></h1>
-            <p class="text-body-sm text-on-surface-variant mt-xs"><?= $monthName ?> &mdash; <?= date('l, M d, Y') ?></p>
-        </section>
-
-        <!-- KPI Cards -->
-        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-md">
-            <!-- Total Present -->
-            <div class="bento-card bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm border-t-4 border-secondary">
-                <div class="flex justify-between items-start mb-xs">
-                    <span class="font-label-caps text-label-caps text-on-surface-variant">Total Present</span>
-                    <span class="bg-secondary/10 text-secondary p-xs rounded-full">
-                        <span class="material-symbols-outlined text-[18px]">check_circle</span>
-                    </span>
-                </div>
-                <div class="flex items-baseline gap-xs">
-                    <span class="font-display-lg text-display-lg text-primary"><?= $presentDays ?></span>
-                    <span class="text-on-surface-variant font-body-sm text-body-sm">Days</span>
-                </div>
-                <p class="font-body-sm text-body-sm text-on-surface-variant mt-sm">This month</p>
-            </div>
-
-            <!-- Total Leaves -->
-            <div class="bento-card bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm border-t-4 border-error">
-                <div class="flex justify-between items-start mb-xs">
-                    <span class="font-label-caps text-label-caps text-on-surface-variant">Total Leaves</span>
-                    <span class="bg-error/10 text-error p-xs rounded-full">
-                        <span class="material-symbols-outlined text-[18px]">event_busy</span>
-                    </span>
-                </div>
-                <div class="flex items-baseline gap-xs">
-                    <span class="font-display-lg text-display-lg text-primary"><?= $leaveDays ?></span>
-                    <span class="text-on-surface-variant font-body-sm text-body-sm">Days</span>
-                </div>
-                <p class="font-body-sm text-body-sm text-on-surface-variant mt-sm">Approved leaves</p>
-            </div>
-
-            <!-- Late Arrivals -->
-            <div class="bento-card bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm border-t-4 border-tertiary-container">
-                <div class="flex justify-between items-start mb-xs">
-                    <span class="font-label-caps text-label-caps text-on-surface-variant">Late Arrivals</span>
-                    <span class="bg-tertiary-fixed text-tertiary p-xs rounded-full">
-                        <span class="material-symbols-outlined text-[18px]">schedule</span>
-                    </span>
-                </div>
-                <div class="flex items-baseline gap-xs">
-                    <span class="font-display-lg text-display-lg text-primary"><?= $lateDays ?></span>
-                    <span class="text-on-surface-variant font-body-sm text-body-sm">Day<?= $lateDays !== 1 ? 's' : '' ?></span>
-                </div>
-                <p class="font-body-sm text-body-sm text-on-surface-variant mt-sm">This month</p>
-            </div>
-
-            <!-- Working Days -->
-            <div class="bento-card bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm border-t-4 border-primary">
-                <div class="flex justify-between items-start mb-xs">
-                    <span class="font-label-caps text-label-caps text-on-surface-variant">Working Days</span>
-                    <span class="bg-primary/10 text-primary p-xs rounded-full">
-                        <span class="material-symbols-outlined text-[18px]">work_history</span>
-                    </span>
-                </div>
-                <div class="flex items-baseline gap-xs">
-                    <span class="font-display-lg text-display-lg text-primary"><?= $workingDays ?></span>
-                    <span class="text-on-surface-variant font-body-sm text-body-sm">Days</span>
-                </div>
-                <?php if ($overtimeHours > 0): ?>
-                    <p class="font-body-sm text-body-sm text-error mt-sm font-semibold">+<?= number_format($overtimeHours, 1) ?>h overtime</p>
-                <?php else: ?>
-                    <p class="font-body-sm text-body-sm text-on-surface-variant mt-sm">This month</p>
+    <div class="flex items-center gap-6 pr-5">
+        <div class="relative">
+            <button onclick="toggleNotifDropdown()" class="p-2 text-slate-400 hover:bg-slate-50 rounded-full relative">
+                <span class="material-symbols-outlined">notifications</span>
+                <?php if ($notifCount > 0): ?>
+                <span class="absolute top-1 right-1 w-4 h-4 bg-red-500 border-2 border-white rounded-full text-[8px] text-white flex items-center justify-center font-bold"><?= $notifCount > 9 ? '9+' : $notifCount ?></span>
                 <?php endif; ?>
-            </div>
-        </section>
-
-        <!-- Main Grid: Today + Notifications -->
-        <section class="grid grid-cols-1 lg:grid-cols-3 gap-lg">
-            <!-- Today's Attendance -->
-            <div class="lg:col-span-2 bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden">
-                <div class="px-lg py-md border-b border-outline-variant flex justify-between items-center">
-                    <h3 class="font-headline-sm text-headline-sm text-primary">Today's Attendance</h3>
-                    <div class="flex items-center gap-xs text-body-sm text-on-surface-variant bg-surface-container-low px-sm py-xs rounded-lg border border-outline-variant">
-                        <span class="material-symbols-outlined text-[16px]">calendar_month</span>
-                        <?= date('M d, Y') ?>, <?= date('l') ?>
-                    </div>
+            </button>
+            <div id="notifDropdown" class="hidden absolute right-0 top-12 w-80 bg-white rounded-xl shadow-xl border border-slate-100 z-50 max-h-96 overflow-y-auto">
+                <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+                    <span class="text-sm font-bold">Notifications</span>
+                    <?php if ($notifCount > 0): ?>
+                    <span class="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full font-bold"><?= $notifCount ?> NEW</span>
+                    <?php endif; ?>
                 </div>
-                <div class="p-lg">
-                    <?php
-                    $attStatus = strtolower($todayAttendance['status'] ?? 'absent');
-                    if ($dashHasCheckIn && $dashHasCheckOut) {
-                        $statusBadge = 'bg-secondary-container text-on-secondary-container';
-                        $statusDot = 'bg-secondary';
-                    } elseif ($attStatus === 'late') {
-                        $statusBadge = 'bg-error-container text-on-error-container';
-                        $statusDot = 'bg-error';
-                    } elseif ($dashHasCheckIn) {
-                        $statusBadge = 'bg-secondary-container text-on-secondary-container';
-                        $statusDot = 'bg-secondary';
-                    } else {
-                        $statusBadge = 'bg-surface-container-highest text-on-surface-variant';
-                        $statusDot = 'bg-outline';
-                    }
-                    ?>
-                    <span class="inline-flex items-center gap-xs px-sm py-0.5 rounded-full <?= $statusBadge ?> text-[11px] font-bold mb-lg">
-                        <span class="w-2 h-2 rounded-full <?= $statusDot ?>"></span>
-                        <?= htmlspecialchars(ucfirst($todayAttendance['status'] ?? 'Not marked')) ?>
-                    </span>
-
-                    <div class="flex flex-col md:flex-row items-center gap-xl">
-                        <div class="flex gap-16">
-                            <div>
-                                <p class="font-label-caps text-label-caps text-on-surface-variant mb-xs">Check-in Time</p>
-                                <p class="text-2xl font-bold"><?= htmlspecialchars($dashHasCheckIn ? date('h:i A', strtotime($dashCheckInRaw)) : '-- : --') ?></p>
-                            </div>
-                            <div>
-                                <p class="font-label-caps text-label-caps text-on-surface-variant mb-xs">Check-out Time</p>
-                                <p class="text-2xl font-bold <?= $dashHasCheckOut ? '' : 'text-outline' ?>"><?= $dashHasCheckOut ? htmlspecialchars(date('h:i A', strtotime($dashCheckOutRaw))) : '- - : - -' ?></p>
-                            </div>
-                        </div>
-
-                        <div class="ml-auto">
-                            <?php if (!$dashHasCheckIn): ?>
-                                <button onclick="dashboardCheckIn()" id="dashCheckinBtn" class="bg-secondary text-on-secondary px-xl py-sm rounded-xl font-label-caps text-label-caps hover:brightness-110 transition-all flex items-center gap-xs shadow-sm">
-                                    <span class="material-symbols-outlined text-[18px]">login</span>
-                                    Check In
-                                </button>
-                            <?php elseif ($dashHasCheckIn && !$dashHasCheckOut): ?>
-                                <button onclick="dashboardCheckOut()" id="dashCheckoutBtn" class="bg-primary text-on-primary px-xl py-sm rounded-xl font-label-caps text-label-caps hover:brightness-110 transition-all flex items-center gap-xs shadow-sm">
-                                    <span class="material-symbols-outlined text-[18px]">logout</span>
-                                    Check Out
-                                </button>
-                            <?php else: ?>
-                                <span class="inline-flex items-center gap-xs px-xl py-sm rounded-xl bg-surface-container-high text-on-surface-variant font-label-caps text-label-caps">
-                                    <span class="material-symbols-outlined text-[18px]">check_circle</span>
-                                    Completed
-                                </span>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Recent Notifications -->
-            <div class="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden">
-                <div class="px-lg py-md border-b border-outline-variant flex justify-between items-center">
-                    <h3 class="font-headline-sm text-headline-sm text-primary">Notifications</h3>
-                </div>
-                <div class="divide-y divide-outline-variant">
+                <div class="divide-y divide-slate-50">
                     <?php if (!empty($notifications)): ?>
-                        <?php foreach ($notifications as $notif): ?>
-                            <div class="px-lg py-md hover:bg-surface-container-low/50 transition-colors">
-                                <div class="flex gap-sm">
-                                    <span class="material-symbols-outlined text-secondary text-lg mt-0.5">
-                                        <?= match(strtolower($notif['type'] ?? 'info')) {
-                                            'leave', 'leave_request' => 'event_note',
-                                            'password_reset' => 'lock',
-                                            'attendance' => 'calendar_today',
-                                            'broadcast' => 'campaign',
-                                            default => 'info'
-                                        } ?>
-                                    </span>
-                                    <div class="flex-1 min-w-0">
-                                        <div class="flex justify-between items-start gap-xs">
-                                            <p class="font-body-sm font-semibold text-on-surface truncate"><?= htmlspecialchars($notif['title']) ?></p>
-                                            <span class="text-data-mono text-data-mono text-on-surface-variant whitespace-nowrap"><?= htmlspecialchars(date('M d', strtotime($notif['created_at']))) ?></span>
-                                        </div>
-                                        <p class="font-body-sm text-on-surface-variant mt-xs line-clamp-2"><?= htmlspecialchars($notif['message']) ?></p>
-                                    </div>
+                        <?php foreach ($notifications as $notification): ?>
+                            <?php
+                            $notifType = $notification['type'] ?? 'info';
+                            if ($notifType === 'broadcast' || $notifType === 'success') {
+                                $notifIcon = 'check_circle';
+                                $notifBg = 'bg-green-50';
+                                $notifIconColor = 'text-green-500';
+                            } elseif ($notifType === 'warning') {
+                                $notifIcon = 'warning';
+                                $notifBg = 'bg-orange-50';
+                                $notifIconColor = 'text-orange-500';
+                            } else {
+                                $notifIcon = 'info';
+                                $notifBg = 'bg-blue-50';
+                                $notifIconColor = 'text-blue-500';
+                            }
+                            ?>
+                            <div class="flex gap-3 p-3 hover:bg-slate-50 transition-colors">
+                                <div class="w-8 h-8 <?= $notifBg ?> rounded-full flex items-center justify-center shrink-0">
+                                    <span class="material-symbols-outlined <?= $notifIconColor ?> text-sm"><?= $notifIcon ?></span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-bold text-gray-900 truncate"><?= htmlspecialchars($notification['title']) ?></p>
+                                    <p class="text-[11px] text-gray-500 truncate"><?= htmlspecialchars($notification['message']) ?></p>
                                 </div>
                             </div>
                         <?php endforeach; ?>
                     <?php else: ?>
-                        <div class="px-lg py-xl text-center">
-                            <span class="material-symbols-outlined text-outline text-3xl">notifications_off</span>
-                            <p class="font-body-sm text-on-surface-variant mt-sm">No notifications</p>
-                        </div>
+                        <div class="p-4 text-center text-xs text-gray-400">No notifications</div>
                     <?php endif; ?>
                 </div>
             </div>
-        </section>
+        </div>
+        <div class="flex items-center gap-3">
+            <div class="text-right">
+                <p class="text-sm font-bold"><?= htmlspecialchars($userInitial) ?></p>
+                <p class="text-[10px] text-text-muted uppercase tracking-wider">Employee</p>
+            </div>
+            <img src="https://i.pinimg.com/736x/e6/41/f7/e641f7816f326ad132ce6ae01543127a.jpg" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant" alt="">
+            <span class="material-symbols-outlined text-slate-400 text-sm">expand_more</span>
+        </div>
+    </div>
+</header>
 
-        <!-- Calendar + Leave Status -->
-        <section class="grid grid-cols-1 lg:grid-cols-3 gap-lg">
-            <!-- Attendance Calendar -->
-            <div class="lg:col-span-2 bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden">
-                <div class="px-lg py-md border-b border-outline-variant">
-                    <h3 class="font-headline-sm text-headline-sm text-primary">Attendance Summary</h3>
+<!-- Main Content -->
+<main id="mainContent" class="pt-16 p-10 space-y-8">
+    <!-- Stats Row -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Card 1: Total Present -->
+        <div class="bg-card-bg p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5">
+            <div class="w-16 h-16 bg-green-50 rounded-2xl flex items-center justify-center">
+                <span class="material-symbols-outlined text-green-500 text-3xl font-light">calendar_today</span>
+            </div>
+            <div>
+                <p class="text-text-muted text-xs font-medium">Total Present</p>
+                <div class="flex items-baseline gap-1">
+                    <span class="text-2xl font-bold"><?= $presentDays ?></span>
+                    <span class="text-sm font-semibold">Days</span>
                 </div>
-                <div class="p-lg">
-                    <div class="grid grid-cols-7 gap-1 text-center">
-                        <?php foreach (['S','M','T','W','T','F','S'] as $d): ?>
-                            <div class="font-label-caps text-label-caps text-on-surface-variant py-2"><?= $d ?></div>
-                        <?php endforeach; ?>
-                        <?php
-                        $firstDow = (int) date('w', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
-                        $totalDays = (int) date('t', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
-                        $todayDay = (int) date('j');
-                        for ($i = 0; $i < $firstDow; $i++): ?>
-                            <div class="py-2 text-body-sm opacity-20">&nbsp;</div>
-                        <?php endfor; ?>
-                        <?php for ($d = 1; $d <= $totalDays; $d++):
-                            $status = $calendarRecords[$d] ?? null;
-                            $isToday = ($d === $todayDay);
-                            if ($isToday):
-                        ?>
-                            <div class="py-2 text-body-sm bg-primary text-on-primary font-bold rounded-lg"><?= $d ?></div>
-                        <?php elseif ($status === 'present'): ?>
-                            <div class="py-2 text-body-sm bg-secondary-container text-on-secondary-container rounded-lg"><?= $d ?></div>
-                        <?php elseif ($status === 'late'): ?>
-                            <div class="py-2 text-body-sm bg-error-container text-on-error-container rounded-lg"><?= $d ?></div>
-                        <?php elseif ($status === 'absent'): ?>
-                            <div class="py-2 text-body-sm bg-surface-container-highest text-on-surface-variant rounded-lg"><?= $d ?></div>
+                <p class="text-[10px] text-text-muted mt-1 uppercase">This Month</p>
+            </div>
+        </div>
+        <!-- Card 2: Total Leaves -->
+        <div class="bg-card-bg p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5">
+            <div class="w-16 h-16 bg-orange-50 rounded-2xl flex items-center justify-center">
+                <span class="material-symbols-outlined text-orange-500 text-3xl font-light">event_busy</span>
+            </div>
+            <div>
+                <p class="text-text-muted text-xs font-medium">Total Leaves</p>
+                <div class="flex items-baseline gap-1">
+                    <span class="text-2xl font-bold"><?= $leaveDays ?></span>
+                    <span class="text-sm font-semibold">Days</span>
+                </div>
+                <p class="text-[10px] text-text-muted mt-1 uppercase">This Month</p>
+            </div>
+        </div>
+        <!-- Card 3: Late Arrivals -->
+        <div class="bg-card-bg p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5">
+            <div class="w-16 h-16 bg-purple-50 rounded-2xl flex items-center justify-center">
+                <span class="material-symbols-outlined text-purple-500 text-3xl font-light">schedule</span>
+            </div>
+            <div>
+                <p class="text-text-muted text-xs font-medium">Late Arrivals</p>
+                <div class="flex items-baseline gap-1">
+                    <span class="text-2xl font-bold"><?= $lateDays ?></span>
+                    <span class="text-sm font-semibold"><?= $lateDays === 1 ? 'Day' : 'Days' ?></span>
+                </div>
+                <p class="text-[10px] text-text-muted mt-1 uppercase">This Month</p>
+            </div>
+        </div>
+        <!-- Card 4: Working Days -->
+        <div class="bg-card-bg p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5">
+            <div class="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center">
+                <span class="material-symbols-outlined text-blue-500 text-3xl font-light">work_history</span>
+            </div>
+            <div>
+                <p class="text-text-muted text-xs font-medium">Working Days</p>
+                <div class="flex items-baseline gap-1">
+                    <span class="text-2xl font-bold"><?= $workingDays ?></span>
+                    <span class="text-sm font-semibold">Days</span>
+                </div>
+                <p class="text-[10px] text-text-muted mt-1 uppercase">This Month</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Grid Section -->
+    <div class="grid grid-cols-12 gap-8">
+        <!-- Today's Attendance -->
+        <div class="col-span-12 lg:col-span-7 bg-card-bg rounded-2xl p-8 shadow-sm border border-slate-100 relative overflow-hidden">
+            <div class="flex justify-between items-start mb-8">
+                <h3 class="text-lg font-bold">Today's Attendance</h3>
+                <div class="flex items-center gap-2 text-text-muted text-xs bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
+                    <span class="material-symbols-outlined text-sm">calendar_month</span>
+                    <?= $monthName ?> <?= date('d') ?>, <?= $dayName ?>
+                </div>
+            </div>
+            <div class="flex flex-col md:flex-row items-center gap-12 relative z-10">
+                <div class="flex flex-col gap-8 w-full md:w-auto">
+                    <div>
+                        <?php if ($hasCheckIn): ?>
+                            <?php
+                            $statusText = 'Present';
+                            $statusColor = 'bg-green-100 text-green-700';
+                            if ($hasCheckOut) {
+                                $statusText = 'Completed';
+                                $statusColor = 'bg-blue-100 text-blue-700';
+                            } elseif (strtolower($todayAtt['status'] ?? '') === 'late') {
+                                $statusText = 'Late';
+                                $statusColor = 'bg-orange-100 text-orange-700';
+                            }
+                            ?>
+                            <span class="inline-block px-4 py-1.5 <?= $statusColor ?> text-[10px] font-bold rounded-lg uppercase tracking-wider mb-6"><?= $statusText ?></span>
                         <?php else: ?>
-                            <div class="py-2 text-body-sm"><?= $d ?></div>
+                            <span class="inline-block px-4 py-1.5 bg-gray-100 text-gray-500 text-[10px] font-bold rounded-lg uppercase tracking-wider mb-6">Not Marked</span>
                         <?php endif; ?>
-                        <?php endfor; ?>
+                        <div class="flex gap-16">
+                            <div>
+                                <p class="text-text-muted text-[10px] font-bold uppercase mb-1">Check-in Time</p>
+                                <p class="text-2xl font-bold"><?= $hasCheckIn ? date('h:i A', strtotime($todayAtt['check_in'])) : '- - : - -' ?></p>
+                            </div>
+                            <div>
+                                <p class="text-text-muted text-[10px] font-bold uppercase mb-1">Check-out Time</p>
+                                <p class="text-2xl font-bold <?= $hasCheckOut ? '' : 'text-slate-300' ?>"><?= $hasCheckOut ? date('h:i A', strtotime($todayAtt['check_out'])) : '- - : - -' ?></p>
+                            </div>
+                        </div>
                     </div>
-                    <div class="mt-lg flex flex-wrap gap-md justify-between">
-                        <div class="flex items-center gap-xs"><span class="w-3 h-3 rounded-full bg-secondary"></span><span class="text-body-sm">On Time</span></div>
-                        <div class="flex items-center gap-xs"><span class="w-3 h-3 rounded-full bg-error"></span><span class="text-body-sm">Late</span></div>
-                        <div class="flex items-center gap-xs"><span class="w-3 h-3 rounded-full bg-outline"></span><span class="text-body-sm">Absent</span></div>
+                    <div id="checkInOutArea">
+                        <?php if (!$hasCheckIn): ?>
+                            <button onclick="doCheckIn()" id="checkinBtn" class="bg-secondary hover:bg-secondary/90 text-white px-10 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-200">
+                                <span class="material-symbols-outlined">login</span>
+                                Check In
+                            </button>
+                        <?php elseif ($hasCheckIn && !$hasCheckOut): ?>
+                            <button onclick="doCheckOut()" id="checkoutBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-10 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-200">
+                                <span class="material-symbols-outlined">logout</span>
+                                Check Out
+                            </button>
+                        <?php else: ?>
+                            <span class="inline-flex items-center gap-2 bg-green-50 text-green-600 px-10 py-4 rounded-xl font-bold">
+                                <span class="material-symbols-outlined">check_circle</span>
+                                Completed for today
+                            </span>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Leave Status -->
-            <div class="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden">
-                <div class="px-lg py-md border-b border-outline-variant flex justify-between items-center">
-                    <h3 class="font-headline-sm text-headline-sm text-primary">Leave Status</h3>
-                    <a class="text-secondary font-body-sm text-body-sm hover:underline" href="leavestatus.php">View All</a>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead class="bg-surface-container-low border-b border-outline-variant">
-                            <tr>
-                                <th class="px-lg py-sm font-label-caps text-label-caps text-on-surface-variant">Type</th>
-                                <th class="px-lg py-sm font-label-caps text-label-caps text-on-surface-variant">Date</th>
-                                <th class="px-lg py-sm font-label-caps text-label-caps text-on-surface-variant">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-outline-variant font-body-sm text-body-sm">
-                            <?php if (!empty($leaveRecords)): ?>
-                                <?php foreach ($leaveRecords as $lr): ?>
-                                    <?php $ls = strtolower($lr['status']); ?>
-                                    <tr>
-                                        <td class="px-lg py-md font-semibold"><?= htmlspecialchars(ucfirst($lr['reason'] ?? 'Leave')) ?></td>
-                                        <td class="px-lg py-md text-on-surface-variant"><?= htmlspecialchars(date('d M Y', strtotime($lr['start_date']))) ?></td>
-                                        <td class="px-lg py-md">
-                                            <span class="inline-flex items-center gap-xs px-sm py-0.5 rounded-full text-[11px] font-bold
-                                                <?= $ls === 'approved' ? 'bg-secondary-container text-on-secondary-container' :
-                                                    ($ls === 'rejected' ? 'bg-error-container text-on-error-container' : 'bg-surface-container-highest text-on-surface-variant') ?>">
-                                                <span class="w-1.5 h-1.5 rounded-full <?= $ls === 'approved' ? 'bg-secondary' : ($ls === 'rejected' ? 'bg-error' : 'bg-outline') ?>"></span>
-                                                <?= htmlspecialchars(ucfirst($lr['status'] ?? 'Pending')) ?>
-                                            </span>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <tr><td class="px-lg py-md text-on-surface-variant" colspan="3">No leave records yet.</td></tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
+        <!-- Recent Notifications -->
+        <div class="col-span-12 lg:col-span-5 bg-card-bg rounded-2xl p-8 shadow-sm border border-slate-100">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold">Recent Notifications</h3>
+                <span class="text-xs font-semibold text-slate-400"><?= count($notifications) ?> New</span>
             </div>
-        </section>
+            <div class="space-y-4">
+                <?php if (!empty($notifications)): ?>
+                    <?php foreach ($notifications as $notification): ?>
+                        <?php
+                        $notifType = $notification['type'] ?? 'info';
+                        if ($notifType === 'broadcast' || $notifType === 'success') {
+                            $notifIcon = 'check_circle';
+                            $notifBg = 'bg-green-50';
+                            $notifIconColor = 'text-green-500';
+                        } elseif ($notifType === 'warning') {
+                            $notifIcon = 'warning';
+                            $notifBg = 'bg-orange-50';
+                            $notifIconColor = 'text-orange-500';
+                        } else {
+                            $notifIcon = 'info';
+                            $notifBg = 'bg-blue-50';
+                            $notifIconColor = 'text-blue-500';
+                        }
+                        $timeAgo = '';
+                        $created = $notification['created_at'] ?? '';
+                        if ($created) {
+                            $diff = time() - strtotime($created);
+                            if ($diff < 60) $timeAgo = 'Just now';
+                            elseif ($diff < 3600) $timeAgo = floor($diff / 60) . 'm ago';
+                            elseif ($diff < 86400) $timeAgo = floor($diff / 3600) . 'h ago';
+                            else $timeAgo = date('M d', strtotime($created));
+                        }
+                        ?>
+                        <div class="flex gap-4 p-4 rounded-2xl border border-slate-50 hover:bg-slate-50 transition-colors">
+                            <div class="w-12 h-12 <?= $notifBg ?> rounded-full flex items-center justify-center shrink-0">
+                                <span class="material-symbols-outlined <?= $notifIconColor ?>"><?= $notifIcon ?></span>
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex justify-between items-start">
+                                    <p class="text-sm font-bold"><?= htmlspecialchars($notification['title']) ?></p>
+                                    <span class="text-[10px] text-text-muted"><?= $timeAgo ?></span>
+                                </div>
+                                <p class="text-xs text-text-muted mt-1"><?= htmlspecialchars($notification['message']) ?></p>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div class="text-center py-8 text-sm text-text-muted">No recent notifications.</div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Attendance Summary (Calendar View) -->
+        <div class="col-span-12 lg:col-span-7 bg-card-bg rounded-2xl p-8 shadow-sm border border-slate-100">
+            <div class="flex justify-between items-center mb-8">
+                <h3 class="text-lg font-bold">Attendance Summary</h3>
+                <span class="flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium">
+                    <?= $monthName ?>
+                </span>
+            </div>
+            <div class="grid grid-cols-7 text-center border-b border-slate-100 pb-4 mb-4">
+                <span class="text-[10px] font-bold text-text-muted uppercase">Sun</span>
+                <span class="text-[10px] font-bold text-text-muted uppercase">Mon</span>
+                <span class="text-[10px] font-bold text-text-muted uppercase">Tue</span>
+                <span class="text-[10px] font-bold text-text-muted uppercase">Wed</span>
+                <span class="text-[10px] font-bold text-text-muted uppercase">Thu</span>
+                <span class="text-[10px] font-bold text-text-muted uppercase">Fri</span>
+                <span class="text-[10px] font-bold text-text-muted uppercase">Sat</span>
+            </div>
+            <div class="grid grid-cols-7 gap-y-6 text-center">
+                <?php
+                $firstDow = (int) date('w', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
+                $totalDays = (int) date('t', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
+                $todayDay = (int) date('j');
+
+                // Previous month trailing days
+                $prevMonth = $currentMonth === 1 ? 12 : $currentMonth - 1;
+                $prevYear = $currentMonth === 1 ? $currentYear - 1 : $currentYear;
+                $prevMonthDays = (int) date('t', mktime(0, 0, 0, $prevMonth, 1, $prevYear));
+                for ($i = 0; $i < $firstDow; $i++):
+                    $pDay = $prevMonthDays - $firstDow + 1 + $i;
+                ?>
+                    <span class="text-slate-300 text-sm"><?= $pDay ?></span>
+                <?php endfor; ?>
+
+                <?php for ($d = 1; $d <= $totalDays; $d++):
+                    $status = $calendarData[$d] ?? null;
+                    $isToday = ($d === $todayDay);
+                ?>
+                    <?php if ($isToday): ?>
+                        <div class="flex flex-col items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-full mx-auto">
+                            <span class="text-sm font-bold"><?= $d ?></span>
+                        </div>
+                    <?php elseif ($status === 'present'): ?>
+                        <div class="flex flex-col items-center">
+                            <span class="text-sm font-bold"><?= $d ?></span>
+                            <span class="w-1.5 h-1.5 bg-green-500 rounded-full mt-1"></span>
+                        </div>
+                    <?php elseif ($status === 'late'): ?>
+                        <div class="flex flex-col items-center">
+                            <span class="text-sm font-bold"><?= $d ?></span>
+                            <span class="w-1.5 h-1.5 bg-orange-500 rounded-full mt-1"></span>
+                        </div>
+                    <?php elseif ($status === 'absent'): ?>
+                        <div class="flex flex-col items-center">
+                            <span class="text-sm font-bold"><?= $d ?></span>
+                            <span class="w-1.5 h-1.5 bg-red-400 rounded-full mt-1"></span>
+                        </div>
+                    <?php else: ?>
+                        <span class="text-sm font-bold"><?= $d ?></span>
+                    <?php endif; ?>
+                <?php endfor; ?>
+
+                <?php
+                // Next month leading days
+                $totalCells = $firstDow + $totalDays;
+                $remaining = ($totalCells % 7 === 0) ? 0 : 7 - ($totalCells % 7);
+                for ($i = 1; $i <= $remaining; $i++):
+                ?>
+                    <span class="text-slate-300 text-sm"><?= $i ?></span>
+                <?php endfor; ?>
+            </div>
+            <div class="mt-10 flex gap-6 justify-center">
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-green-500"></span><span class="text-[10px] text-text-muted font-bold">Present</span></div>
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-orange-500"></span><span class="text-[10px] text-text-muted font-bold">Late</span></div>
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-red-400"></span><span class="text-[10px] text-text-muted font-bold">Absent</span></div>
+                <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-slate-300"></span><span class="text-[10px] text-text-muted font-bold">No Data</span></div>
+            </div>
+        </div>
+
+        <!-- Leave Status Table -->
+        <div class="col-span-12 lg:col-span-5 bg-card-bg rounded-2xl p-8 shadow-sm border border-slate-100">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold">Leave Status</h3>
+                <a class="text-blue-500 text-xs font-semibold hover:underline" href="leavestatus.php">View All</a>
+            </div>
+            <div class="overflow-hidden">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-[10px] text-text-muted uppercase font-bold border-b border-slate-50">
+                            <th class="py-4 pb-2">Type</th>
+                            <th class="py-4 pb-2">Date</th>
+                            <th class="py-4 pb-2">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        <?php if (!empty($leaveRequests)): ?>
+                            <?php foreach ($leaveRequests as $lr): ?>
+                                <?php
+                                $lrStatus = strtolower($lr['status'] ?? 'pending');
+                                if ($lrStatus === 'approved') {
+                                    $lrBadge = 'bg-green-50 text-green-600';
+                                    $lrLabel = 'Approved';
+                                } elseif ($lrStatus === 'rejected') {
+                                    $lrBadge = 'bg-red-50 text-red-500';
+                                    $lrLabel = 'Rejected';
+                                } else {
+                                    $lrBadge = 'bg-orange-50 text-orange-500';
+                                    $lrLabel = 'Pending';
+                                }
+                                $lrDate = $lr['start_date'] ?? '';
+                                ?>
+                                <tr>
+                                    <td class="py-4 text-xs font-bold"><?= htmlspecialchars($lr['leave_type'] ?? 'Leave') ?></td>
+                                    <td class="py-4 text-xs text-text-muted"><?= $lrDate ? date('d M Y', strtotime($lrDate)) : '-' ?></td>
+                                    <td class="py-4 text-[10px]">
+                                        <span class="<?= $lrBadge ?> px-3 py-1 rounded-lg font-bold"><?= $lrLabel ?></span>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr>
+                                <td class="py-8 text-xs text-text-muted text-center" colspan="3">No leave requests yet.</td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 </main>
 
 <script>
+// Notification dropdown
+function toggleNotifDropdown() {
+    const dropdown = document.getElementById('notifDropdown');
+    dropdown.classList.toggle('hidden');
+}
+document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('notifDropdown');
+    const btn = e.target.closest('button');
+    if (!btn || !btn.onclick || !btn.onclick.toString().includes('toggleNotifDropdown')) {
+        if (!e.target.closest('#notifDropdown')) {
+            dropdown.classList.add('hidden');
+        }
+    }
+});
+
+// Live clock
 function updateClock() {
     const now = new Date();
     const el = document.getElementById('liveClock');
@@ -482,8 +527,10 @@ function updateClock() {
 updateClock();
 setInterval(updateClock, 1000);
 
-async function dashboardCheckIn() {
-    const btn = document.getElementById('dashCheckinBtn');
+// Check In
+async function doCheckIn() {
+    const btn = document.getElementById('checkinBtn');
+    if (!btn) return;
     btn.disabled = true;
     btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">sync</span> Processing...';
     try {
@@ -496,17 +543,19 @@ async function dashboardCheckIn() {
         } else {
             alert(data.message);
             btn.disabled = false;
-            btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">login</span> Check In';
+            btn.innerHTML = '<span class="material-symbols-outlined">login</span> Check In';
         }
     } catch (e) {
-        alert('Network error');
+        alert('Network error. Please try again.');
         btn.disabled = false;
-        btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">login</span> Check In';
+        btn.innerHTML = '<span class="material-symbols-outlined">login</span> Check In';
     }
 }
 
-async function dashboardCheckOut() {
-    const btn = document.getElementById('dashCheckoutBtn');
+// Check Out
+async function doCheckOut() {
+    const btn = document.getElementById('checkoutBtn');
+    if (!btn) return;
     btn.disabled = true;
     btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">sync</span> Processing...';
     try {
@@ -519,15 +568,14 @@ async function dashboardCheckOut() {
         } else {
             alert(data.message);
             btn.disabled = false;
-            btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">logout</span> Check Out';
+            btn.innerHTML = '<span class="material-symbols-outlined">logout</span> Check Out';
         }
     } catch (e) {
-        alert('Network error');
+        alert('Network error. Please try again.');
         btn.disabled = false;
-        btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">logout</span> Check Out';
+        btn.innerHTML = '<span class="material-symbols-outlined">logout</span> Check Out';
     }
 }
 </script>
-<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body>
 </html>

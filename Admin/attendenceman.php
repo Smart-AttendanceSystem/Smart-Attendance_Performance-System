@@ -1,7 +1,6 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
-
 $role = $_SESSION['user_role'] ?? '';
 if ($role !== 'admin') {
     header('Location: ../auth/login.php');
@@ -87,6 +86,109 @@ if ($logResult && $logResult->num_rows > 0) {
     }
 }
 
+// Gmail SMTP Configuration
+$gmailUser = 'your-email@gmail.com';       // Your Gmail address
+$gmailPass = 'your-app-password';          // Gmail App Password (not regular password)
+$gmailFromName = 'HR Admin';
+
+// Send email via Gmail SMTP
+function sendGmailSMTP($to, $toName, $subject, $body, $attachment, $attachmentName, $gmailUser, $gmailPass, $gmailFromName) {
+    $host = 'smtp.gmail.com';
+    $port = 587;
+    $timeout = 30;
+
+    $errno = 0;
+    $errstr = '';
+    $fp = fsockopen('tls://' . $host, $port, $errno, $errstr, $timeout);
+    if (!$fp) {
+        return false;
+    }
+
+    $response = fgets($fp, 512);
+
+    fputs($fp, "EHLO localhost\r\n");
+    $response = '';
+    while ($line = fgets($fp, 512)) {
+        $response .= $line;
+        if (substr($line, 3, 1) === ' ') break;
+    }
+
+    fputs($fp, "STARTTLS\r\n");
+    $response = fgets($fp, 512);
+    if (strpos($response, '220') === false) {
+        fclose($fp);
+        return false;
+    }
+
+    stream_context_set_option($fp, 'ssl', 'verify_peer', false);
+    stream_context_set_option($fp, 'ssl', 'verify_peer_name', false);
+    $crypto = stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT);
+    if (!$crypto) {
+        fclose($fp);
+        return false;
+    }
+
+    fputs($fp, "EHLO localhost\r\n");
+    $response = '';
+    while ($line = fgets($fp, 512)) {
+        $response .= $line;
+        if (substr($line, 3, 1) === ' ') break;
+    }
+
+    fputs($fp, "AUTH LOGIN\r\n");
+    $response = fgets($fp, 512);
+
+    fputs($fp, base64_encode($gmailUser) . "\r\n");
+    $response = fgets($fp, 512);
+
+    fputs($fp, base64_encode($gmailPass) . "\r\n");
+    $response = fgets($fp, 512);
+    if (strpos($response, '235') === false) {
+        fclose($fp);
+        return false;
+    }
+
+    $boundary = md5(uniqid(time()));
+    $headers = "From: {$gmailFromName} <{$gmailUser}>\r\n";
+    $headers .= "To: {$toName} <{$to}>\r\n";
+    $headers .= "Subject: {$subject}\r\n";
+    $headers .= "MIME-Version: 1.0\r\n";
+    $headers .= "Content-Type: multipart/mixed; boundary=\"{$boundary}\"\r\n";
+
+    $msg = "From: {$gmailFromName} <{$gmailUser}>\r\n";
+    $msg .= "To: {$toName} <{$to}>\r\n";
+    $msg .= "Subject: {$subject}\r\n";
+    $msg .= "MIME-Version: 1.0\r\n";
+    $msg .= "Content-Type: multipart/mixed; boundary=\"{$boundary}\"\r\n";
+    $msg .= "\r\n";
+    $msg .= "--{$boundary}\r\n";
+    $msg .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n";
+    $msg .= strip_tags($body) . "\r\n\r\n";
+    $msg .= "--{$boundary}\r\n";
+    $msg .= "Content-Type: application/pdf; name=\"{$attachmentName}\"\r\n";
+    $msg .= "Content-Transfer-Encoding: base64\r\n";
+    $msg .= "Content-Disposition: attachment; filename=\"{$attachmentName}\"\r\n\r\n";
+    $msg .= chunk_split(base64_encode($attachment));
+    $msg .= "--{$boundary}--";
+
+    fputs($fp, "MAIL FROM:<{$gmailUser}>\r\n");
+    $response = fgets($fp, 512);
+
+    fputs($fp, "RCPT TO:<{$to}>\r\n");
+    $response = fgets($fp, 512);
+
+    fputs($fp, "DATA\r\n");
+    $response = fgets($fp, 512);
+
+    fputs($fp, $msg . "\r\n.\r\n");
+    $response = fgets($fp, 512);
+
+    fputs($fp, "QUIT\r\n");
+    fclose($fp);
+
+    return true;
+}
+
 // Email monthly PDF handler
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email_monthly_pdf'])) {
     header('Content-Type: application/json');
@@ -106,31 +208,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email_monthly_pdf']))
         exit;
     }
 
-    $boundary = md5(uniqid(time()));
     $filename = 'attendance_' . preg_replace('/[^a-zA-Z0-9_-]/', '', $month) . '.pdf';
+    $subject = "Attendance Report - " . ($month ?: '');
+    $emailBody = "Dear " . ($toName ?: 'Employee') . ",\r\n\r\n";
+    $emailBody .= "Please find attached your attendance report for " . ($month ?: 'the requested month') . ".\r\n\r\n";
+    $emailBody .= "Best regards,\r\nHR Department";
 
-    $headers = "From: HR Admin <noreply@company.com>\r\n";
-    $headers .= "MIME-Version: 1.0\r\n";
-    $headers .= "Content-Type: multipart/mixed; boundary=\"{$boundary}\"\r\n";
-
-    $body = "--{$boundary}\r\n";
-    $body .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n";
-    $body .= "Dear " . ($toName ?: 'Employee') . ",\r\n\r\n";
-    $body .= "Please find attached your attendance report for " . ($month ?: 'the requested month') . ".\r\n\r\n";
-    $body .= "Best regards,\r\nHR Department\r\n\r\n";
-    $body .= "--{$boundary}\r\n";
-    $body .= "Content-Type: application/pdf; name=\"{$filename}\"\r\n";
-    $body .= "Content-Transfer-Encoding: base64\r\n";
-    $body .= "Content-Disposition: attachment; filename=\"{$filename}\"\r\n\r\n";
-    $body .= chunk_split(base64_encode($pdfContent));
-    $body .= "--{$boundary}--";
-
-    $sent = @mail($toEmail, "Attendance Report - " . ($month ?: ''), $body, $headers);
+    $sent = sendGmailSMTP($toEmail, $toName, $subject, $emailBody, $pdfContent, $filename, $gmailUser, $gmailPass, $gmailFromName);
 
     if ($sent) {
         echo json_encode(['success' => true, 'message' => 'PDF sent successfully to ' . htmlspecialchars($toEmail) . '.']);
     } else {
-        echo json_encode(['success' => false, 'message' => 'Failed to send email. Check mail configuration.']);
+        echo json_encode(['success' => false, 'message' => 'Failed to send email. Check Gmail configuration.']);
     }
     exit;
 }
@@ -298,7 +387,6 @@ if ($monthlyUserId > 0) {
         }
     </script>
 <link rel="stylesheet" href="../config/dashboard.css"/>    <link rel="stylesheet" href="../config/theme.css"/>
-    <script src="../config/theme.js"></script><script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
 <style>
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -309,20 +397,18 @@ if ($monthlyUserId > 0) {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #c4c6cd; border-radius: 10px; }
     </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<!-- Set sidebar state BEFORE body paints (eliminates layout blink) -->
+<script>
+(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var r=document.documentElement;r.classList.remove('sidebar-open','sidebar-closed');r.classList.add(c?'sidebar-closed':'sidebar-open');})();
+</script>
 </head>
-<body class="bg-background text-on-background overflow-hidden">
+<body class="bg-background text-on-background">
 <?php $activePage = 'attendance'; ?>
 <?php include __DIR__ . '/includes/sidebar_admin.php'; ?>
 <!-- TopNavBar (Shared Component) -->
-<header id="mainHeader" class="fixed top-0 right-0 w-full h-12 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
-<div class="flex items-center gap-lg flex-1">
-<button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
 
-</div>
-
-</header>
 <!-- Main Canvas -->
-<main id="mainContent" class="pt-16 h-screen overflow-y-auto bg-background">
+<main id="mainContent" class="pt-3 h-screen overflow-y-auto bg-background">
 <div class="p-lg max-w-[1600px] mx-auto space-y-lg">
 <!-- Page Header & Filter Controls -->
 <section class="flex flex-col md:flex-row md:items-end justify-between gap-md   ">
@@ -480,7 +566,7 @@ if ($statusLower === 'late') {
 </div>
 </section>
 <!-- Monthly Attendance Report -->
-<section class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden">
+<section id="monthly-report-section" class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden">
 <div class="px-lg py-md border-b border-outline-variant flex flex-col md:flex-row md:items-center justify-between gap-md bg-surface-bright">
 <h3 class="font-headline-sm text-headline-sm text-primary">Monthly Attendance Report</h3>
 <div class="flex gap-sm">
@@ -492,6 +578,9 @@ if ($statusLower === 'late') {
 <span class="material-symbols-outlined text-[16px]">email</span> Email PDF
 </button>
 <?php endif; ?>
+<button onclick="deleteMonthlyReport()" class="bg-error/10 text-error px-md py-xs rounded-lg font-label-caps text-label-caps hover:bg-error/20 transition-opacity flex items-center gap-xs">
+<span class="material-symbols-outlined text-[16px]">delete</span> Delete
+</button>
 </div>
 </div>
 <div class="px-lg py-md flex flex-col md:flex-row gap-md items-end border-b border-outline-variant">
@@ -748,6 +837,13 @@ $label = ucfirst($status === 'no record' ? 'No Record' : ($status === 'weekend' 
                         alert('Failed to send email. Please try again.');
                     });
             });
+        }
+
+        function deleteMonthlyReport() {
+            const section = document.getElementById('monthly-report-section');
+            if (section) {
+                section.style.display = 'none';
+            }
         }
     </script>
 <?php include __DIR__ . '/../config/sidebar_js.php'; ?>

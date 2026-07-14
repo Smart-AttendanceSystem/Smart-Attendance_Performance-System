@@ -10,6 +10,8 @@ if ($userId <= 0) {
     exit;
 }
 
+$conn->query("UPDATE `user` SET last_activity = NOW() WHERE id = $userId");
+
 // Ensure extra columns exist before querying them
 $extraCols = ['blood_group' => 'VARCHAR(50) DEFAULT NULL', 'date_of_birth' => 'DATE DEFAULT NULL', 'gender' => 'VARCHAR(20) DEFAULT NULL', 'avatar' => 'VARCHAR(500) DEFAULT NULL'];
 foreach ($extraCols as $col => $def) {
@@ -259,10 +261,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_avatar'])) {
 <?php $activePage = 'profile'; ?>
 <?php include __DIR__ . '/includes/sidebar_user.php'; ?>
 <!-- Top Navigation Bar -->
-<header id="mainHeader" class="fixed top-0 right-0 w-full h-10 bg-surface dark:bg-surface-dim shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+<header id="mainHeader" class="fixed top-0 h-10 bg-surface dark:bg-surface-dim shadow-sm flex justify-between items-center z-40 transition-all duration-200">
     <div class="flex items-center gap-lg flex-1">
-        <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
-    </div>
+        </div>
 </header>
 <!-- Main Canvas -->
 <main id="mainContent" class="pt-10 h-screen overflow-y-auto bg-background p-lg">
@@ -509,5 +510,4 @@ if (e.target === this) closeEditModal();
       background-color: rgba(130, 247, 216, 0.05);
     }
     </style>
-<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

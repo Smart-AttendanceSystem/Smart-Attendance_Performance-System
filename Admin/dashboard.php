@@ -11,6 +11,9 @@ if ($role !== 'admin') {
 $adminId = (int) ($_SESSION['user_id'] ?? 0);
 $adminName = $_SESSION['user_name'] ?? 'Admin';
 $adminAvatar = $_SESSION['user_avatar'] ?? '';
+if ($adminId > 0) {
+    $conn->query("UPDATE `user` SET last_activity = NOW() WHERE id = $adminId");
+}
 if (empty($adminAvatar) && $adminId > 0) {
     $avQuery = $conn->prepare("SELECT ep.avatar FROM employee_profiles ep WHERE ep.user_id = ?");
     $avQuery->bind_param('i', $adminId);
@@ -88,8 +91,20 @@ if ($attStmt) {
     $attendanceRate = $attTotal > 0 ? round(($attPresent / $attTotal) * 100, 1) : 0;
 }
 
-$plRes = $conn->query("SELECT COUNT(*) FROM leave_requests WHERE LOWER(status) = 'pending'");
+$plRes = $conn->query("SELECT COUNT(*) FROM leave_requests WHERE LOWER(status) = 'approved' AND CURDATE() BETWEEN start_date AND end_date");
 if ($plRes) $pendingLeaves = (int) $plRes->fetch_row()[0];
+
+// Employees on leave today
+$onLeaveToday = [];
+$leaveStmt = $conn->prepare("SELECT u.name, lr.start_date, lr.end_date, lr.reason FROM leave_requests lr JOIN `user` u ON u.id = lr.user_id WHERE LOWER(lr.status) = 'approved' AND CURDATE() BETWEEN lr.start_date AND lr.end_date ORDER BY u.name ASC");
+$leaveStmt->execute();
+$leaveResult = $leaveStmt->get_result();
+if ($leaveResult && $leaveResult->num_rows > 0) {
+    while ($row = $leaveResult->fetch_assoc()) {
+        $onLeaveToday[] = $row;
+    }
+}
+$leaveStmt->close();
 
 for ($i = 4; $i >= 0; $i--) {
     $m = (int) date('m', strtotime("-$i months"));
@@ -115,28 +130,26 @@ for ($i = 4; $i >= 0; $i--) {
 }
 
 $adminUnreadCount = 0;
-if ($conn->query("SHOW TABLES LIKE 'notifications'")->num_rows > 0) {
+$notifTable = $conn->query("SHOW TABLES LIKE 'notifications'");
+if ($notifTable && $notifTable->num_rows > 0) {
     $unreadRes = $conn->query("SELECT COUNT(*) FROM notifications WHERE (user_id = 1 OR user_id = 0) AND is_read = 0");
     if ($unreadRes) $adminUnreadCount = (int) $unreadRes->fetch_row()[0];
 
-    $notifResult = $conn->query("SELECT title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 5");
+    $notifResult = $conn->query("SELECT id, title, message, created_at FROM notifications ORDER BY created_at DESC LIMIT 5");
     if ($notifResult && $notifResult->num_rows > 0) {
         while ($row = $notifResult->fetch_assoc()) {
             $notifications[] = $row;
         }
     }
 }
-if (empty($notifications) && $pendingLeaves > 0) {
-    $lrResult = $conn->query("SELECT u.name, lr.reason FROM leave_requests lr LEFT JOIN `user` u ON u.id = lr.user_id WHERE LOWER(lr.status) = 'pending' ORDER BY lr.id DESC LIMIT 5");
-    if ($lrResult && $lrResult->num_rows > 0) {
-        while ($row = $lrResult->fetch_assoc()) {
-            $notifications[] = [
-                'title' => 'Leave request pending',
-                'message' => ($row['name'] ?? 'A staff') . ' requested leave: ' . ($row['reason'] ?? ''),
-                'created_at' => date('Y-m-d H:i:s'),
-            ];
-        }
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_notification'])) {
+    $notifId = (int) ($_POST['notification_id'] ?? 0);
+    if ($notifId > 0) {
+        $conn->query("DELETE FROM notifications WHERE id = $notifId");
     }
+    header('Location: dashboard.php');
+    exit;
 }
 
 if ($conn->query("SHOW TABLES LIKE 'holidays'")->num_rows > 0) {
@@ -207,37 +220,134 @@ tailwind.config = {
 <script src="../config/theme.js"></script>
 <!-- Set sidebar state BEFORE body paints (eliminates layout blink) -->
 <script>
-(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);document.documentElement.className=c?'sidebar-closed':'sidebar-open';})();
+(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var r=document.documentElement;r.classList.remove('sidebar-open','sidebar-closed');r.classList.add(c?'sidebar-closed':'sidebar-open');})();
 </script>
 </head>
 <body class="text-on-surface bg-background">
-<?php $activePage = 'dashboard'; ?>
-<?php include __DIR__ . '/includes/sidebar_admin.php'; ?>
-<!-- Predicted TopNavBar Component -->
-<header id="mainHeader" class="fixed top-0 right-0 w-full h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
-<div class="flex items-center gap-lg flex-1">
-<button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
-<h2 class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-inverse-primary shrink-0"><?= htmlspecialchars($adminName) ?></h2>
-<div class="relative w-full max-w-md">
-<span class="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
-<input id="dashboardSearchInput" name="search" class="w-full bg-surface-container-low border-none rounded-full py-xs pl-xl pr-md text-body-md focus:ring-2 focus:ring-secondary/50" placeholder="Search employees, files, or reports..." type="text"/>
-</div>
-</div>
-<div class="flex items-center gap-md">
-<button class="material-symbols-outlined p-xs rounded-full hover:bg-surface-container-low text-on-surface-variant relative transition-all">
-                notifications
+        <?php
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
+        ?>
+        <?php $activePage = 'dashboard'; ?>
+        <?php include __DIR__ . '/includes/sidebar_admin.php'; ?>
+<!-- TopNavBar -->
+<header id="mainHeader"
+    class="fixed top-0 h-14 
+           bg-white border-b border-gray-300 shadow-sm
+           flex items-center justify-between px-5 z-40">
+
+    <div class="flex items-center gap-4">
+
+        <a href="dashboard.php" class="flex items-center gap-2.5 shrink-0">
+            <div class="w-7 h-7 bg-green-600 rounded-md flex items-center justify-center">
+                <span class="material-symbols-outlined text-white text-lg">
+                    badge
+                </span>
+            </div>
+
+            <span class="text-gray-900 font-semibold text-sm hidden md:inline">
+                Smart Attendance
+            </span>
+        </a>
+
+
+        <div class="relative">
+            <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[15px]">
+                search
+            </span>
+
+            <input
+                id="dashboardSearchInput"
+                name="search"
+                class="w-64 lg:w-80 h-8 pl-8 pr-3 text-[13px]
+                       border border-gray-300 rounded-md
+                       focus:outline-none focus:border-green-500"
+                placeholder="Search..."
+                type="text"
+            />
+        </div>
+
+    </div>
+
+
+    <div class="flex items-center gap-2">
+
+        <div class="relative">
+            <button onclick="toggleNotifDropdown()" class="p-2 rounded-md hover:bg-gray-100 relative">
+                <span class="material-symbols-outlined text-gray-600 text-[20px]">notifications</span>
                 <?php if ($adminUnreadCount > 0): ?>
-                <span class="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-error text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1"><?= $adminUnreadCount > 99 ? '99+' : $adminUnreadCount ?></span>
+                <span class="absolute top-1 right-1 min-w-[15px] h-[15px] bg-blue-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                    <?= $adminUnreadCount > 99 ? '99+' : $adminUnreadCount ?>
+                </span>
                 <?php endif; ?>
-</button>
-<div class="h-8 w-[1px] bg-outline-variant mx-xs"></div>
-<a class="bg-secondary text-white px-md py-xs rounded-lg font-body-md flex items-center gap-xs hover:bg-secondary/90 active:scale-95 transition-all" href="employee_management.php">
-<span class="material-symbols-outlined !text-[18px]">person_add</span>
-                Add Employee
-            </a>
+            </button>
+            <div id="notifDropdown" class="hidden absolute right-0 top-12 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 max-h-96 overflow-y-auto">
+                <div class="p-4 border-b border-gray-100 flex justify-between items-center">
+                    <span class="text-sm font-bold">Notifications</span>
+                    <?php if ($adminUnreadCount > 0): ?>
+                    <span class="text-[10px] bg-blue-500 text-white px-2 py-0.5 rounded-full font-bold"><?= $adminUnreadCount ?> NEW</span>
+                    <?php endif; ?>
+                </div>
+                <div class="divide-y divide-gray-50">
+                    <?php if (!empty($notifications)): ?>
+                        <?php foreach ($notifications as $notification): ?>
+                            <?php
+                            $notifType = $notification['type'] ?? 'info';
+                            if ($notifType === 'broadcast' || $notifType === 'success') {
+                                $notifIcon = 'check_circle';
+                                $notifBg = 'bg-green-50';
+                                $notifIconColor = 'text-green-500';
+                            } elseif ($notifType === 'warning') {
+                                $notifIcon = 'warning';
+                                $notifBg = 'bg-orange-50';
+                                $notifIconColor = 'text-orange-500';
+                            } else {
+                                $notifIcon = 'info';
+                                $notifBg = 'bg-blue-50';
+                                $notifIconColor = 'text-blue-500';
+                            }
+                            ?>
+                            <div class="flex gap-3 p-3 hover:bg-gray-50 transition-colors">
+                                <div class="w-8 h-8 <?= $notifBg ?> rounded-full flex items-center justify-center shrink-0">
+                                    <span class="material-symbols-outlined <?= $notifIconColor ?> text-sm"><?= $notifIcon ?></span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-bold text-gray-900 truncate"><?= htmlspecialchars($notification['title']) ?></p>
+                                    <p class="text-[11px] text-gray-500 truncate"><?= htmlspecialchars($notification['message']) ?></p>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <div class="p-4 text-center text-xs text-gray-400">No notifications</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
+
+
+        <a href="employee_management.php"
+           class="bg-green-600 hover:bg-green-700
+                  text-white h-8 px-3
+                  rounded-md text-[13px]
+                  font-medium flex items-center gap-1.5">
+
+            <span class="material-symbols-outlined text-[16px]">
+                person_add
+            </span>
+
+            <span class="hidden sm:inline">
+                New Employee
+            </span>
+
+        </a>
+
+    </div>
+
 </header>
 <!-- Main Content Canvas -->
-<main id="mainContent" class="pt-16 min-h-screen p-lg max-w-[1600px]">
+<main id="mainContent" class="pt-14 min-h-screen p-lg max-w-[1600px]">
 <div class="flex flex-col gap-lg">
 <!-- Welcome Header -->
 <section class="flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
@@ -278,15 +388,14 @@ tailwind.config = {
 <p class="font-label-caps text-label-caps text-on-surface-variant">LATE ARRIVALS <?= $period === 'month' ? 'THIS MONTH' : ($period === 'week' ? 'THIS WEEK' : 'TODAY') ?></p>
 <h3 class="font-display-lg text-display-lg text-primary mt-xs"><?= $lateArrivals ?></h3>
 </div>
-<!-- KPI Card: Pending Leave -->
+<!-- KPI Card: Employees on Leave Today -->
 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-sm border-t-4 border-tertiary-container transition-transform hover:scale-[1.02]">
 <div class="flex justify-between items-start mb-sm">
-<span class="material-symbols-outlined text-tertiary-container bg-tertiary-fixed p-xs rounded-lg">pending_actions</span>
-<div class="bg-tertiary-fixed text-on-tertiary-fixed px-xs rounded text-[10px] font-bold">URGENT</div>
+<span class="material-symbols-outlined text-tertiary-container bg-tertiary-fixed p-xs rounded-lg">event_busy</span>
 </div>
-<p class="font-label-caps text-label-caps text-on-surface-variant">PENDING LEAVE REQUESTS</p>
+<p class="font-label-caps text-label-caps text-on-surface-variant">EMPLOYEES ON LEAVE TODAY</p>
 <h3 class="font-display-lg text-display-lg text-primary mt-xs"><?= $pendingLeaves ?></h3>
-<p class="text-[10px] text-on-surface-variant mt-xs italic"><?= $pendingLeaves ?> awaiting your approval</p>
+<p class="text-[10px] text-on-surface-variant mt-xs italic">approved leaves active today</p>
 </div>
 </section>
 <!-- Charts & Notification Section -->
@@ -342,15 +451,19 @@ tailwind.config = {
 <div class="space-y-sm">
 <?php if (!empty($notifications)): ?>
 <?php foreach ($notifications as $notification): ?>
-<div class="flex gap-md p-sm bg-surface-container-low rounded-lg border border-outline-variant/30 hover:border-secondary transition-colors cursor-pointer">
+<div class="flex gap-md p-sm bg-surface-container-low rounded-lg border border-outline-variant/30 hover:border-secondary transition-colors">
 <div class="w-10 h-10 rounded-full bg-secondary-container text-secondary flex items-center justify-center shrink-0">
 <span class="material-symbols-outlined">assignment_late</span>
 </div>
-<div>
+<div class="flex-1">
 <p class="text-body-sm font-semibold text-primary"><?= htmlspecialchars($notification['title']) ?></p>
 <p class="text-[11px] text-on-surface-variant mb-base"><?= htmlspecialchars($notification['message']) ?></p>
 <span class="text-[10px] text-outline font-data-mono uppercase"><?= htmlspecialchars(date('M d, H:i', strtotime($notification['created_at']))) ?></span>
 </div>
+<form method="POST" class="shrink-0" onsubmit="return confirm('Delete this notification?')">
+<input type="hidden" name="notification_id" value="<?= (int) $notification['id'] ?>">
+<button type="submit" name="delete_notification" class="material-symbols-outlined text-on-surface-variant hover:text-error p-xs rounded-full hover:bg-error-container/20 transition-colors text-lg">delete</button>
+</form>
 </div>
 <?php endforeach; ?>
 <?php else: ?>
@@ -386,16 +499,20 @@ tailwind.config = {
 <?php endforeach; ?>
 </div>
 </div>
-<!-- Recent Activities / Attendance Table -->
+<!-- Recent Activities / Attendance & Leave Table -->
 <div class="xl:col-span-3 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
 <div class="p-lg border-b border-outline-variant flex justify-between items-center">
 <div>
-<h4 class="font-headline-sm text-headline-sm text-primary"><?= $period === 'today' ? "Today's" : ($period === 'week' ? "This Week's" : "This Month's") ?> Attendance Detail</h4>
-<p class="text-body-sm text-on-surface-variant">Live feed of employee clock-ins (<?= $rangeStart ?> to <?= $rangeEnd ?>)</p>
+<h4 class="font-headline-sm text-headline-sm text-primary">Today's Overview</h4>
+<p class="text-body-sm text-on-surface-variant">Attendance and leave details for <?= date('M d, Y') ?></p>
 </div>
-<button class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-full">more_vert</button>
+<select id="overview-select" onchange="toggleOverview()" class="bg-surface-container border border-outline-variant rounded-lg text-body-sm px-md py-xs focus:ring-secondary/50 cursor-pointer">
+<option value="attendance">Attendance Detail</option>
+<option value="leave">Employees on Leave</option>
+</select>
 </div>
-<div class="overflow-x-auto">
+<!-- Attendance Table -->
+<div id="attendance-table" class="overflow-x-auto">
 <table class="w-full text-left border-collapse">
 <thead>
 <tr class="bg-surface-container-low">
@@ -426,11 +543,44 @@ tailwind.config = {
 <?php endforeach; ?>
 <?php else: ?>
 <tr>
-<td class="px-lg py-md text-body-sm text-on-surface-variant" colspan="4">No attendance records for this <?= $period ?> yet.</td>
+<td class="px-lg py-md text-body-sm text-on-surface-variant" colspan="4">No attendance records for today yet.</td>
 </tr>
 <?php endif; ?>
 </tbody>
 </table>
+</div>
+<!-- Leave Table -->
+<div id="leave-table" class="overflow-x-auto hidden">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low">
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">EMPLOYEE</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">LEAVE PERIOD</th>
+<th class="px-lg py-md font-label-caps text-label-caps text-on-surface-variant">REASON</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/30">
+<?php if (!empty($onLeaveToday)): ?>
+<?php foreach ($onLeaveToday as $leave): ?>
+<tr class="hover:bg-secondary/5 transition-colors">
+<td class="px-lg py-md">
+<div class="flex items-center gap-sm">
+<div class="w-8 h-8 rounded-full bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center text-sm font-semibold"><?= htmlspecialchars(substr($leave['name'], 0, 1)) ?></div>
+<span class="text-body-sm font-semibold text-primary"><?= htmlspecialchars($leave['name']) ?></span>
+</div>
+</td>
+<td class="px-lg py-md text-body-sm font-data-mono text-on-surface-variant"><?= htmlspecialchars(date('M d', strtotime($leave['start_date']))) ?> - <?= htmlspecialchars(date('M d, Y', strtotime($leave['end_date']))) ?></td>
+<td class="px-lg py-md text-body-sm text-on-surface-variant italic max-w-[250px] truncate"><?= htmlspecialchars($leave['reason']) ?></td>
+</tr>
+<?php endforeach; ?>
+<?php else: ?>
+<tr>
+<td class="px-lg py-md text-body-sm text-on-surface-variant text-center" colspan="3">No employees on leave today.</td>
+</tr>
+<?php endif; ?>
+</tbody>
+</table>
+</div>
 </div>
 </div>
 </section>
@@ -467,7 +617,21 @@ tailwind.config = {
 </div>
 <!-- Micro-interaction Scripts -->
 <script>
-   
+// Notification dropdown
+function toggleNotifDropdown() {
+    const dropdown = document.getElementById('notifDropdown');
+    dropdown.classList.toggle('hidden');
+}
+document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('notifDropdown');
+    const btn = e.target.closest('button');
+    if (!btn || !btn.onclick || !btn.onclick.toString().includes('toggleNotifDropdown')) {
+        if (!e.target.closest('#notifDropdown')) {
+            dropdown.classList.add('hidden');
+        }
+    }
+});
+
 document.getElementById('dashboardSearchInput').addEventListener('input', function() {
     // 1. Grab what the user typed and make it lowercase
     const searchString = this.value.toLowerCase().trim();
@@ -516,6 +680,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     });
 });
+
+function toggleOverview() {
+    const select = document.getElementById('overview-select');
+    const attendanceTable = document.getElementById('attendance-table');
+    const leaveTable = document.getElementById('leave-table');
+    if (select.value === 'attendance') {
+        attendanceTable.classList.remove('hidden');
+        leaveTable.classList.add('hidden');
+    } else {
+        attendanceTable.classList.add('hidden');
+        leaveTable.classList.remove('hidden');
+    }
+}
 </script>
-<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

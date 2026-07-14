@@ -18,6 +18,10 @@ if ($userId === 0 && $emailParam !== '') {
     $emailStmt->close();
 }
 
+if ($userId > 0) {
+    $conn->query("UPDATE `user` SET last_activity = NOW() WHERE id = $userId");
+}
+
 $user = [];
 $stmt = $conn->prepare("SELECT u.id, u.name, u.email, u.role, u.department_id, ep.position, ep.avatar FROM `user` u LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.id = ?");
 $stmt->bind_param('i', $userId);
@@ -200,10 +204,9 @@ if ($userId > 0) {
 <?php $activePage = 'change_password'; ?>
 <?php include __DIR__ . '/includes/sidebar_user.php'; ?>
 <!-- Top Navigation Bar -->
-<header id="mainHeader" class="fixed top-0 right-0 w-full h-10 bg-surface dark:bg-surface-dim shadow-sm flex justify-between items-center px-lg z-40 transition-all duration-200">
+<header id="mainHeader" class="fixed top-0 h-10 bg-surface dark:bg-surface-dim shadow-sm flex justify-between items-center z-40 transition-all duration-200">
     <div class="flex items-center gap-lg flex-1">
-        <button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
-    </div>
+        </div>
    
 </header>
 <!-- Main Content Area -->
@@ -331,5 +334,4 @@ if ($userId > 0) {
             if (indicator) indicator.classList.toggle('animate-pulse');
         }, 3000);
     </script>
-<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

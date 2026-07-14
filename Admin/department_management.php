@@ -274,15 +274,17 @@ $totalDepartments = count($departments);
         }
     </script>
 <link rel="stylesheet" href="../config/dashboard.css"/>    <link rel="stylesheet" href="../config/theme.css"/>
-    <script src="../config/theme.js"></script><script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
+<!-- Set sidebar state BEFORE body paints (eliminates layout blink) -->
+<script>
+(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var r=document.documentElement;r.classList.remove('sidebar-open','sidebar-closed');r.classList.add(c?'sidebar-closed':'sidebar-open');})();
+</script>
 </head>
 <body class="bg-background font-body-md text-on-surface">
 <?php $activePage = 'departments'; ?>
 <?php include __DIR__ . '/includes/sidebar_admin.php'; ?>
 <!-- TopNavBar Shell -->
-<header id="mainHeader" class="fixed top-0 right-0 w-full h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center px-lg h-16 z-40">
+<header id="mainHeader" class="fixed top-0 h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant shadow-sm flex justify-between items-center h-16 z-40">
 <div class="flex items-center gap-lg flex-1">
-<button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
 <h2 class="font-headline-sm text-headline-sm font-semibold text-primary dark:text-inverse-primary shrink-0"><?= htmlspecialchars($adminName) ?></h2>
 <div class="relative w-full max-w-md">
 <span class="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
@@ -631,5 +633,4 @@ $totalDepartments = count($departments);
             }
         });
     </script>
-<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

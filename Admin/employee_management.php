@@ -187,9 +187,9 @@ $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
 if ($deptFilter > 0) {
-    $empRes = $conn->query("SELECT u.id, u.name, u.email, u.status, d.name AS department_name, ep.position FROM `user` u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.role = 'employee' AND u.department_id = $deptFilter ORDER BY u.id $sort LIMIT $perPage OFFSET $offset");
+    $empRes = $conn->query("SELECT u.id, u.name, u.email, u.status, u.last_activity, d.name AS department_name, ep.position FROM `user` u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.role = 'employee' AND u.department_id = $deptFilter ORDER BY u.id $sort LIMIT $perPage OFFSET $offset");
 } else {
-    $empRes = $conn->query("SELECT u.id, u.name, u.email, u.status, d.name AS department_name, ep.position FROM `user` u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.role = 'employee' AND ep.position LIKE '%Manager%' ORDER BY u.id $sort LIMIT $perPage OFFSET $offset");
+    $empRes = $conn->query("SELECT u.id, u.name, u.email, u.status, u.last_activity, d.name AS department_name, ep.position FROM `user` u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.role = 'employee' AND ep.position LIKE '%Manager%' ORDER BY u.id $sort LIMIT $perPage OFFSET $offset");
 }
 if ($empRes && $empRes->num_rows > 0) {
     while ($row = $empRes->fetch_assoc()) {
@@ -322,7 +322,6 @@ if ($deptStatsRes && $deptStatsRes->num_rows > 0) {
 <link rel="stylesheet" href="../config/dashboard.css"/>
 <link rel="stylesheet" href="../config/theme.css"/>
 <script src="../config/theme.js"></script>
-<script>(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var root=document.documentElement;root.classList.remove('sidebar-open','sidebar-closed');root.classList.add(c?'sidebar-closed':'sidebar-open');})();</script>
 <style>
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -335,6 +334,10 @@ if ($deptStatsRes && $deptStatsRes->num_rows > 0) {
         .zebra-row:nth-child(even) { background-color: #f3f4f5; }
         .hover-row:hover { background-color: rgba(0, 107,88,0.2); }
     </style>
+<!-- Set sidebar state BEFORE body paints (eliminates layout blink) -->
+<script>
+(function(){var s=localStorage.getItem('sidebarClosed');var c=s==='1'||(s===null&&window.innerWidth<768);var r=document.documentElement;r.classList.remove('sidebar-open','sidebar-closed');r.classList.add(c?'sidebar-closed':'sidebar-open');})();
+</script>
 </head>
 <body class="bg-background text-on-surface font-body-md selection:bg-secondary-container">
 <?php $activePage = 'employees'; ?>
@@ -342,10 +345,9 @@ if ($deptStatsRes && $deptStatsRes->num_rows > 0) {
 <!-- Main Content Area -->
 <div id="mainContent" class="min-h-screen flex flex-col">
 <!-- TopNavBar -->
-<header id="mainHeader" class="fixed top-0 right-0 w-full h-16 bg-surface border-b border-outline-variant flex justify-between items-center px-lg h-16 z-40 shadow-sm">
+<header id="mainHeader" class="fixed top-0 h-16 bg-surface border-b border-outline-variant flex justify-between items-center h-16 z-40 shadow-sm">
 <div class="flex items-center gap-lg flex-1">
-<button onclick="toggleSidebar()" class="material-symbols-outlined text-on-surface-variant hover:bg-surface-container-low p-xs rounded-lg transition-colors">menu</button>
-<span class="font-headline-sm text-headline-sm font-semibold text-primary">HR Admin</span>
+<span class="font-headline-sm text-headline-sm font-semibold text-primary">Admin</span>
 <div class="relative w-full max-w-md">
 <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
 <input id="hrAdminSearch" name="search" class="w-full bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-2 focus:ring-2 focus:ring-secondary text-body-md" placeholder="Search by name, department, or ID..." type="text"/>
@@ -436,9 +438,11 @@ if ($deptStatsRes && $deptStatsRes->num_rows > 0) {
 <td class="px-lg py-md"><?= htmlspecialchars($emp['department_name'] ?? '—') ?></td>
 <td class="px-lg py-md text-on-surface-variant"><?= htmlspecialchars($emp['position'] ?? '—') ?></td>
 <td class="px-lg py-md">
-<?php $status = strtolower($emp['status'] ?? 'active'); ?>
-<span class="inline-flex items-center gap-base px-2 py-1 rounded-full text-[11px] font-bold <?= $status === 'active' ? 'bg-secondary-container text-on-secondary-container' : ($status === 'on leave' ? 'bg-tertiary-fixed text-on-tertiary-fixed-variant' : 'bg-error-container/30 text-error') ?>">
-<span class="w-2 h-2 rounded-full <?= $status === 'active' ? 'bg-secondary' : ($status === 'on leave' ? 'bg-tertiary' : 'bg-error') ?>"></span> <?= htmlspecialchars($emp['status'] ?? 'Active') ?>
+<?php
+$isActive = !empty($emp['last_activity']) && (strtotime('now') - strtotime($emp['last_activity'])) < 300;
+?>
+<span class="inline-flex items-center gap-base px-2 py-1 rounded-full text-[11px] font-bold <?= $isActive ? 'bg-secondary-container text-on-secondary-container' : 'bg-error-container/30 text-error' ?>">
+<span class="w-2 h-2 rounded-full <?= $isActive ? 'bg-secondary' : 'bg-error' ?>"></span> <?= $isActive ? 'Active' : 'Inactive' ?>
 </span>
 </td>
 <td class="px-lg py-md text-on-surface-variant"><?= htmlspecialchars($emp['email'] ?? '—') ?></td>
@@ -706,5 +710,4 @@ document.getElementById('hrAdminSearch').addEventListener('input', function() {
     });
 });
     </script>
-<?php include __DIR__ . '/../config/sidebar_js.php'; ?>
 </body></html>

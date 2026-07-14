@@ -37,6 +37,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['user_email'] = $user['email'];
                     $_SESSION['user_role'] = $user['role'];
 
+                    $actStmt = $conn->prepare('UPDATE `user` SET last_activity = NOW() WHERE id = ?');
+                    $actStmt->bind_param('i', $user['id']);
+                    $actStmt->execute();
+
                     $role = strtolower($user['role'] ?? '');
                     if ($role === 'admin') {
                         header('Location: ../Admin/dashboard.php');

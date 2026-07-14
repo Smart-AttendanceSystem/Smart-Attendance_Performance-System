@@ -54,13 +54,9 @@ html.dark .text-secondary { color: #7dd3fc !important; }
 /* ===========================================================
    SIDEBAR + MAIN CONTENT LAYOUT
    ===========================================================
-   The sidebar is position:fixed.  The main content and header
-   receive a left-margin / left offset to make room.
-
-   ** CRITICAL FOR NO-BLINK **:
-   We use a <script> in <head> that writes a CSS class onto <html>
-   BEFORE the body paints.  The rules below react to that class
-   so the correct layout is applied on the very first paint frame.
+   GitHub-style collapsible sidebar:
+   - OPEN:  280px wide with icons + labels
+   - CLOSED: 72px wide with icons only (labels hidden)
    =========================================================== */
 
 /* --- Sidebar base (shared by admin & user) --------------- */
@@ -69,64 +65,141 @@ html.dark .text-secondary { color: #7dd3fc !important; }
     left: 0;
     top: 0;
     height: 100%;
-    width: 260px;
+    width: 280px;
     z-index: 50;
     overflow-y: auto;
-    will-change: transform;
-    transform: translateX(-100%);          /* hidden by default */
-    transition: transform 0.2s ease;       /* only animated on toggle */
+    overflow-x: hidden;
+    transform: translateX(0);
+    transition: width 0.2s ease;
+}
+
+#sidebar .sidebar-label {
+    transition: opacity 0.15s ease, width 0.15s ease;
 }
 
 /* --- Header & main content base -------------------------- */
 #mainHeader,
 #mainContent {
+    margin-left: 280px;
     transition: margin-left 0.2s ease, left 0.2s ease, width 0.2s ease;
 }
 
 /* ===========================================================
    INITIAL-STATE CLASS  (written by inline <script> in <head>)
    ===========================================================
-   class="sidebar-open"  → sidebar visible, content shifted
-   class="sidebar-closed"→ sidebar hidden, content full-width
+   class="sidebar-open"   → sidebar 280px, icons + labels
+   class="sidebar-closed" → sidebar 72px, icons only
    =========================================================== */
 
 /* --- OPEN state ------------------------------------------ */
 html.sidebar-open #sidebar {
-    transform: translateX(0) !important;
+    width: 280px !important;
+}
+html.sidebar-open #sidebar .sidebar-label {
+    opacity: 1;
+    width: auto;
+}
+html.sidebar-open #sidebar .sidebar-nav-item {
+    justify-content: flex-start;
+    padding: 10px 16px;
+    margin: 2px 6px;
+}
+html.sidebar-open #sidebar .sidebar-toggle-icon {
+    transform: rotate(0deg);
+}
+html.sidebar-open #sidebar .sidebar-header-text {
+    display: block;
 }
 html.sidebar-open #mainHeader {
-    left: 260px !important;
-    width: calc(100% - 260px) !important;
+    left: 280px !important;
+    width: calc(100% - 280px) !important;
 }
 html.sidebar-open #mainContent {
-    margin-left: 260px !important;
+    margin-left: 280px !important;
 }
 
 /* --- CLOSED state ---------------------------------------- */
 html.sidebar-closed #sidebar {
-    transform: translateX(-100%) !important;
+    width: 72px !important;
+}
+html.sidebar-closed #sidebar .sidebar-label {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+html.sidebar-closed #sidebar .sidebar-nav-item {
+    justify-content: center;
+    padding: 10px 0;
+    margin: 2px 6px;
+}
+html.sidebar-closed #sidebar .sidebar-nav-item .material-symbols-outlined {
+    margin-right: 0;
+}
+html.sidebar-closed #sidebar .sidebar-toggle-icon {
+    transform: rotate(180deg);
+}
+html.sidebar-closed #sidebar .sidebar-header-text {
+    display: none;
+}
+html.sidebar-closed #sidebar .sidebar-header {
+    justify-content: center;
+}
+html.sidebar-closed #sidebar .sidebar-profile {
+    justify-content: center;
+}
+html.sidebar-closed #sidebar .sidebar-profile-name {
+    display: none;
+}
+html.sidebar-closed #sidebar .sidebar-logout-label {
+    display: none;
+}
+html.sidebar-closed #sidebar .sidebar-logout-link {
+    justify-content: center;
+    padding: 10px 0;
+    margin: 2px 6px;
 }
 html.sidebar-closed #mainHeader {
-    left: 0 !important;
-    width: 100% !important;
+    left: 72px !important;
+    width: calc(100% - 72px) !important;
 }
 html.sidebar-closed #mainContent {
-    margin-left: 0 !important;
+    margin-left: 72px !important;
 }
 
-/* --- Mobile: always closed on load ----------------------- */
+/* --- Mobile: overlay-based sidebar ----------------------- */
 @media (max-width: 767px) {
-    html.sidebar-open #sidebar {
+    #sidebar {
+        width: 260px !important;
         transform: translateX(-100%) !important;
+        transition: transform 0.2s ease;
     }
-    html.sidebar-open #mainHeader,
-    html.sidebar-closed #mainHeader {
+    #sidebar .sidebar-label {
+        opacity: 1;
+        width: auto;
+    }
+    #sidebar .sidebar-nav-item {
+        justify-content: flex-start;
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+    #sidebar .sidebar-header-text { display: block !important; }
+    #sidebar .sidebar-profile-name { display: block !important; }
+    #sidebar .sidebar-logout-label { display: inline !important; }
+    #sidebar .sidebar-logout-link { justify-content: flex-start !important; }
+    #sidebar .sidebar-header { justify-content: space-between !important; }
+    #sidebar .sidebar-toggle-icon { transform: rotate(0deg) !important; }
+
+    #mainHeader {
         left: 0 !important;
         width: 100% !important;
-    }
-    html.sidebar-open #mainContent,
-    html.sidebar-closed #mainContent {
         margin-left: 0 !important;
+    }
+    #mainContent {
+        margin-left: 0 !important;
+    }
+    html.sidebar-open #sidebar {
+        transform: translateX(0) !important;
     }
 }
 
@@ -134,13 +207,34 @@ html.sidebar-closed #mainContent {
 #sidebarOverlay {
     position: fixed;
     inset: 0;
-    display: none;                       /* hidden by default */
+    background: rgba(0, 0, 0, 0.4);
+    display: none;
+    z-index: 40;
 }
 html.sidebar-open #sidebarOverlay {
     display: block;
 }
 @media (min-width: 768px) {
     #sidebarOverlay { display: none !important; }
+}
+
+/* --- Sidebar toggle button ------------------------------- */
+#sidebarToggle {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    flex-shrink: 0;
+}
+#sidebarToggle:hover {
+    background-color: rgba(0, 0, 0, 0.06);
+}
+html.dark #sidebarToggle:hover {
+    background-color: rgba(255, 255, 255, 0.08);
 }
 
 /* --- Chart bar animation --------------------------------- */
